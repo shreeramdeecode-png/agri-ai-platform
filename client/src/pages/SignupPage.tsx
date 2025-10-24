@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -16,19 +15,22 @@ const features = [
   "Climate Intelligence",
 ];
 
-export default function UserLogin() {
+export default function SignupPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const loginMutation = useMutation({
-    mutationFn: async (credentials: { email: string; password: string }) => {
-      const result = await apiRequest("/api/auth/login", {
+  const signupMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const result = await apiRequest("/api/auth/signup", {
         method: "POST",
-        body: JSON.stringify(credentials),
+        body: JSON.stringify(data),
       });
       return result;
     },
@@ -37,14 +39,14 @@ export default function UserLogin() {
       localStorage.setItem("user", JSON.stringify(data.user));
       toast({
         title: "Success",
-        description: "Logged in successfully",
+        description: "Account created successfully",
       });
       setLocation("/search");
     },
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Login failed",
+        description: error.message || "Signup failed",
         variant: "destructive",
       });
     },
@@ -52,7 +54,23 @@ export default function UserLogin() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    loginMutation.mutate({ email, password });
+    
+    if (password !== confirmPassword) {
+      toast({
+        title: "Error",
+        description: "Passwords do not match",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    signupMutation.mutate({
+      fullName: `${firstName} ${lastName}`,
+      email,
+      password,
+      role: "user",
+      isActive: true,
+    });
   };
 
   return (
@@ -62,6 +80,7 @@ export default function UserLogin() {
       <div className="absolute w-32 h-32 bg-teal-600/15 rounded-full blur-3xl top-32 right-40"></div>
       <div className="absolute w-64 h-64 bg-teal-600/15 rounded-full blur-3xl bottom-20 right-32"></div>
       <div className="absolute w-40 h-40 bg-teal-600/20 rounded-full blur-3xl bottom-40 left-20"></div>
+      <div className="absolute w-32 h-32 bg-teal-600/10 rounded-full blur-2xl top-1/2 left-1/2"></div>
 
       <div className="relative z-10 flex items-center justify-center gap-16 w-full max-w-7xl px-8">
         {/* Left Panel - Branding & Features */}
@@ -93,18 +112,51 @@ export default function UserLogin() {
           </CardContent>
         </Card>
 
-        {/* Right Panel - Login Form */}
+        {/* Right Panel - Signup Form */}
         <Card className="w-full max-w-md bg-white border-gray-200">
           <CardHeader className="text-center pb-6">
             <CardTitle className="text-3xl font-bold text-slate-800">
-              Welcome Back
+              Create Account
             </CardTitle>
             <CardDescription className="text-base text-slate-500">
-              Sign in to your account
+              Join AgriSearch today
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName" className="text-sm text-slate-700">
+                    First Name
+                  </Label>
+                  <Input
+                    id="firstName"
+                    data-testid="input-firstname"
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="John"
+                    className="h-12 text-base"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName" className="text-sm text-slate-700">
+                    Last Name
+                  </Label>
+                  <Input
+                    id="lastName"
+                    data-testid="input-lastname"
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Doe"
+                    className="h-12 text-base"
+                    required
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-sm text-slate-700">
                   Email Address
@@ -146,36 +198,38 @@ export default function UserLogin() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="remember"
-                    checked={rememberMe}
-                    onCheckedChange={(checked) => setRememberMe(checked as boolean)}
-                    className="border-gray-300 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword" className="text-sm text-slate-700">
+                  Confirm Password
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="confirmPassword"
+                    data-testid="input-confirm-password"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="h-12 text-base pr-16"
+                    required
                   />
-                  <Label
-                    htmlFor="remember"
-                    className="text-sm text-slate-500 font-normal cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-teal-600 font-medium hover:text-teal-700"
                   >
-                    Remember me
-                  </Label>
+                    {showConfirmPassword ? "Hide" : "Show"}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="text-sm text-teal-600 font-medium hover:text-teal-700"
-                >
-                  Forgot password?
-                </button>
               </div>
 
               <Button
                 type="submit"
                 className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white text-base font-bold"
-                disabled={loginMutation.isPending}
+                disabled={signupMutation.isPending}
                 data-testid="button-submit"
               >
-                {loginMutation.isPending ? "Signing in..." : "Sign In"}
+                {signupMutation.isPending ? "Creating account..." : "Sign Up"}
               </Button>
             </form>
 
@@ -189,14 +243,14 @@ export default function UserLogin() {
             </div>
 
             <p className="text-center text-sm text-slate-500 mt-4">
-              Don't have an account?{" "}
+              Already have an account?{" "}
               <button
                 type="button"
-                onClick={() => setLocation("/signup")}
+                onClick={() => setLocation("/")}
                 className="font-bold text-teal-600 hover:text-teal-700"
-                data-testid="button-signup"
+                data-testid="button-signin"
               >
-                Sign up
+                Sign in
               </button>
             </p>
           </CardContent>

@@ -17,6 +17,8 @@ import type {
   InsertApiSetting,
   AdminLog,
   InsertAdminLog,
+  Notification,
+  InsertNotification,
 } from "@shared/schema";
 
 // Configure WebSocket for Neon in Node.js environment
@@ -64,6 +66,13 @@ export interface IStorage {
   createAdminLog(log: InsertAdminLog): Promise<AdminLog>;
   getAllAdminLogs(): Promise<AdminLog[]>;
   
+  // Notification operations
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  getAllNotifications(): Promise<Notification[]>;
+  markNotificationAsRead(id: string): Promise<void>;
+  deleteNotification(id: string): Promise<void>;
+  clearAllNotifications(): Promise<void>;
+  
   // Dashboard stats
   getDashboardStats(): Promise<{
     totalUsers: number;
@@ -71,6 +80,7 @@ export interface IStorage {
     apiQueries: number;
     pdfQueries: number;
     imageQueries: number;
+    activeSessions: number;
   }>;
 }
 
@@ -220,6 +230,30 @@ export class DbStorage implements IStorage {
     return await db.select().from(schema.adminLogs).orderBy(desc(schema.adminLogs.createdAt));
   }
 
+  // Notification operations
+  async createNotification(notification: InsertNotification): Promise<Notification> {
+    const result = await db.insert(schema.notifications).values(notification).returning();
+    return result[0];
+  }
+
+  async getAllNotifications(): Promise<Notification[]> {
+    return await db.select().from(schema.notifications).orderBy(desc(schema.notifications.createdAt));
+  }
+
+  async markNotificationAsRead(id: string): Promise<void> {
+    await db.update(schema.notifications)
+      .set({ isRead: true })
+      .where(eq(schema.notifications.id, id));
+  }
+
+  async deleteNotification(id: string): Promise<void> {
+    await db.delete(schema.notifications).where(eq(schema.notifications.id, id));
+  }
+
+  async clearAllNotifications(): Promise<void> {
+    await db.delete(schema.notifications);
+  }
+
   // Dashboard stats
   async getDashboardStats(): Promise<{
     totalUsers: number;
@@ -227,13 +261,20 @@ export class DbStorage implements IStorage {
     apiQueries: number;
     pdfQueries: number;
     imageQueries: number;
+    activeSessions: number;
   }> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const users = await db.select().from(schema.users);
+    const activeUsers = users.filter(u => u.isActive);
     const allHistory = await db.select().from(schema.searchHistory);
     const todayHistory = allHistory.filter(h => h.createdAt >= today);
+
+    // Active sessions: users who searched in last hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentHistory = allHistory.filter(h => h.createdAt >= oneHourAgo);
+    const activeSessions = new Set(recentHistory.map(h => h.userId)).size;
 
     return {
       totalUsers: users.length,
@@ -241,6 +282,7 @@ export class DbStorage implements IStorage {
       apiQueries: allHistory.filter(h => h.sourceType?.includes('API')).length,
       pdfQueries: allHistory.filter(h => h.sourceType?.includes('PDF')).length,
       imageQueries: allHistory.filter(h => h.sourceType?.includes('Image')).length,
+      activeSessions,
     };
   }
 }

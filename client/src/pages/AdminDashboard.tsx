@@ -1,75 +1,207 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Search, FileText, Image as ImageIcon } from "lucide-react";
+import { Users, Search, Zap, Activity, Download, Settings as SettingsIcon, Bell, FileBarChart } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 export default function AdminDashboard() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ["/api/admin/dashboard"],
   });
 
+  const { data: recentLogs } = useQuery({
+    queryKey: ["/api/admin/logs"],
+  });
+
   if (isLoading) {
-    return <div className="p-8">Loading dashboard...</div>;
+    return <div className="p-8 text-white">Loading dashboard...</div>;
   }
 
-  const cards = [
+  // Mock chart data - in real app, would be from API
+  const chartData = [
+    { name: "Mon", queries: 400, api: 240 },
+    { name: "Tue", queries: 300, api: 139 },
+    { name: "Wed", queries: 600, api: 380 },
+    { name: "Thu", queries: 500, api: 430 },
+    { name: "Fri", queries: 700, api: 480 },
+    { name: "Sat", queries: 900, api: 590 },
+    { name: "Sun", queries: 800, api: 500 },
+  ];
+
+  const statCards = [
     {
       title: "Total Users",
       value: stats?.totalUsers || 0,
+      change: "+13% from last week",
       icon: Users,
-      description: "Registered users",
+      gradient: "from-[#f87171] to-[#fb923c]",
       testId: "stat-total-users",
     },
     {
       title: "Queries Today",
       value: stats?.queriesToday || 0,
+      change: "+25% from yesterday",
       icon: Search,
-      description: "Search queries made today",
+      gradient: "from-[#14b8a6] to-[#0d9488]",
       testId: "stat-queries-today",
     },
     {
-      title: "API Queries",
+      title: "API Calls",
       value: stats?.apiQueries || 0,
-      icon: FileText,
-      description: "Total API-based queries",
-      testId: "stat-api-queries",
+      change: "+8% from last hour",
+      icon: Zap,
+      gradient: "from-[#60a5fa] to-[#3b82f6]",
+      testId: "stat-api-calls",
     },
     {
-      title: "PDF Queries",
-      value: stats?.pdfQueries || 0,
-      icon: FileText,
-      description: "Total PDF-based queries",
-      testId: "stat-pdf-queries",
-    },
-    {
-      title: "Image Queries",
-      value: stats?.imageQueries || 0,
-      icon: ImageIcon,
-      description: "Total image-based queries",
-      testId: "stat-image-queries",
+      title: "Active Sessions",
+      value: stats?.activeSessions || 0,
+      change: "Real-time activity",
+      icon: Activity,
+      gradient: "from-[#fbbf24] to-[#f59e0b]",
+      testId: "stat-active-sessions",
     },
   ];
 
+  const quickActions = [
+    { label: "Export Logs", icon: Download, color: "from-[#f87171] to-[#fb923c]" },
+    { label: "Manage APIs", icon: SettingsIcon, color: "from-[#14b8a6] to-[#0d9488]" },
+    { label: "Send Alerts", icon: Bell, color: "from-[#60a5fa] to-[#3b82f6]" },
+    { label: "View Reports", icon: FileBarChart, color: "from-[#fbbf24] to-[#f59e0b]" },
+  ];
+
+  const recentActivity = recentLogs?.slice(0, 4) || [];
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold" data-testid="heading-dashboard">Dashboard</h1>
-        <p className="text-muted-foreground">Overview of platform statistics</p>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white mb-2" data-testid="heading-dashboard">Dashboard Overview</h1>
+          <p className="text-gray-400">Real-time analytics and system monitoring</p>
+        </div>
+        <div className="w-12 h-12 rounded-full bg-gradient-to-r from-[#f87171] to-[#fb923c] flex items-center justify-center text-white font-bold">
+          AD
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {cards.map((card) => (
-          <Card key={card.title}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{card.title}</CardTitle>
-              <card.icon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid={card.testId}>{card.value}</div>
-              <p className="text-xs text-muted-foreground">{card.description}</p>
-            </CardContent>
-          </Card>
-        ))}
+      {/* Stat Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {statCards.map((stat) => {
+          const Icon = stat.icon;
+          return (
+            <Card
+              key={stat.title}
+              className="bg-[#2d3250] border-[#424769] overflow-hidden"
+              data-testid={stat.testId}
+            >
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-gray-400 text-sm font-medium">{stat.title}</CardTitle>
+                  <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${stat.gradient} flex items-center justify-center`}>
+                    <Icon className="h-5 w-5 text-white" />
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-white mb-1">{stat.value.toLocaleString()}</div>
+                <p className="text-xs text-gray-400">{stat.change}</p>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Query Analytics Chart */}
+        <Card className="bg-[#2d3250] border-[#424769] lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-white">Query Analytics</CardTitle>
+            <CardDescription className="text-gray-400">Last 7 days performance</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#424769" />
+                <XAxis dataKey="name" stroke="#9ca3af" />
+                <YAxis stroke="#9ca3af" />
+                <Tooltip
+                  contentStyle={{ backgroundColor: "#2d3250", border: "1px solid #424769", color: "#fff" }}
+                  labelStyle={{ color: "#fff" }}
+                />
+                <Line type="monotone" dataKey="queries" stroke="#f87171" strokeWidth={2} />
+                <Line type="monotone" dataKey="api" stroke="#60a5fa" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Recent Activity */}
+        <Card className="bg-[#2d3250] border-[#424769]">
+          <CardHeader>
+            <CardTitle className="text-white">Recent Activity</CardTitle>
+            <CardDescription className="text-gray-400">Live system events</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {recentActivity.length === 0 && (
+                <p className="text-gray-400 text-sm">No recent activity</p>
+              )}
+              {recentActivity.map((log: any, index: number) => {
+                const colors = [
+                  { bg: "bg-emerald-500/20", text: "text-emerald-400", dot: "bg-emerald-500" },
+                  { bg: "bg-red-500/20", text: "text-red-400", dot: "bg-red-500" },
+                  { bg: "bg-yellow-500/20", text: "text-yellow-400", dot: "bg-yellow-500" },
+                  { bg: "bg-blue-500/20", text: "text-blue-400", dot: "bg-blue-500" },
+                ];
+                const color = colors[index % colors.length];
+                
+                return (
+                  <div key={log.id} className={`flex items-start gap-3 p-3 rounded-lg ${color.bg}`}>
+                    <div className={`w-2 h-2 rounded-full ${color.dot} mt-2 flex-shrink-0`} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium ${color.text} truncate`}>
+                        {log.action?.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {new Date(log.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quick Actions */}
+      <Card className="bg-[#2d3250] border-[#424769]">
+        <CardHeader>
+          <CardTitle className="text-white">Quick Actions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-4">
+            {quickActions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <Button
+                  key={action.label}
+                  className={`bg-gradient-to-r ${action.color} hover:opacity-90 text-white border-0`}
+                  data-testid={`button-${action.label.toLowerCase().replace(/\s/g, '-')}`}
+                >
+                  <Icon className="mr-2 h-4 w-4" />
+                  {action.label}
+                </Button>
+              );
+            })}
+          </div>
+          <div className="mt-6 flex items-center gap-2 text-emerald-400">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-sm font-medium">All Systems Online</span>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -460,6 +460,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Notification routes
+  app.get("/api/admin/notifications", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const notifications = await storage.getAllNotifications();
+      res.json(notifications);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/admin/notifications/clear", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      await storage.clearAllNotifications();
+      res.json({ message: "All notifications cleared" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/admin/notifications/:id", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      await storage.deleteNotification(req.params.id);
+      res.json({ message: "Notification deleted" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create user route
+  app.post("/api/admin/users", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const userData = insertUserSchema.parse(req.body);
+      const existingUser = await storage.getUserByEmail(userData.email);
+      
+      if (existingUser) {
+        return res.status(400).json({ message: "Email already exists" });
+      }
+
+      const user = await storage.createUser(userData);
+      
+      await storage.createAdminLog({
+        adminId: (req as any).user.userId,
+        action: "create_user",
+        targetEntity: "user",
+        targetId: user.id,
+        details: { email: user.email },
+      });
+
+      res.json({ message: "User created", user });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

@@ -8,13 +8,16 @@ import AdminLayout from "@/components/AdminLayout";
 import UserLayout from "@/components/UserLayout";
 
 import UserLogin from "@/pages/UserLogin";
+import SignupPage from "@/pages/SignupPage";
 import AdminLogin from "@/pages/AdminLogin";
 import AdminDashboard from "@/pages/AdminDashboard";
 import AdminUsers from "@/pages/AdminUsers";
 import AdminDocuments from "@/pages/AdminDocuments";
 import AdminLogs from "@/pages/AdminLogs";
 import AdminSettings from "@/pages/AdminSettings";
+import AdminNotifications from "@/pages/AdminNotifications";
 import SearchPage from "@/pages/SearchPage";
+import SearchResults from "@/pages/SearchResults";
 import DocumentsPage from "@/pages/DocumentsPage";
 import ImagesPage from "@/pages/ImagesPage";
 import HistoryPage from "@/pages/HistoryPage";
@@ -62,6 +65,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={UserLogin} />
+      <Route path="/signup" component={SignupPage} />
       <Route path="/admin" component={AdminLogin} />
       
       <Route path="/admin/dashboard">
@@ -76,12 +80,18 @@ function Router() {
       <Route path="/admin/logs">
         {() => <AdminProtectedRoute component={AdminLogs} />}
       </Route>
+      <Route path="/admin/notifications">
+        {() => <AdminProtectedRoute component={AdminNotifications} />}
+      </Route>
       <Route path="/admin/settings">
         {() => <AdminProtectedRoute component={AdminSettings} />}
       </Route>
 
       <Route path="/search">
         {() => <ProtectedRoute component={SearchPage} layout={UserLayout} />}
+      </Route>
+      <Route path="/search/results">
+        {() => <ProtectedRoute component={SearchResults} layout={UserLayout} />}
       </Route>
       <Route path="/documents">
         {() => <ProtectedRoute component={DocumentsPage} layout={UserLayout} />}
