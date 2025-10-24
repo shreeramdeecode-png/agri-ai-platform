@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/neon-serverless";
 import { Pool, neonConfig } from "@neondatabase/serverless";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import ws from "ws";
 import * as schema from "@shared/schema";
@@ -82,6 +82,13 @@ export interface IStorage {
     imageQueries: number;
     activeSessions: number;
   }>;
+  
+  // Analytics
+  getQueryAnalytics(): Promise<Array<{
+    name: string;
+    queries: number;
+    api: number;
+  }>>;
 }
 
 export class DbStorage implements IStorage {
@@ -284,6 +291,40 @@ export class DbStorage implements IStorage {
       imageQueries: allHistory.filter(h => h.sourceType?.includes('Image')).length,
       activeSessions,
     };
+  }
+
+  async getQueryAnalytics(): Promise<Array<{
+    name: string;
+    queries: number;
+    api: number;
+  }>> {
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const analytics: Array<{ name: string; queries: number; api: number }> = [];
+    
+    // Get last 7 days data
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      date.setHours(0, 0, 0, 0);
+      
+      const nextDate = new Date(date);
+      nextDate.setDate(nextDate.getDate() + 1);
+      
+      const dayHistory = await db.select().from(schema.searchHistory)
+        .where(sql`${schema.searchHistory.createdAt} >= ${date} AND ${schema.searchHistory.createdAt} < ${nextDate}`);
+      
+      const dayName = dayNames[date.getDay()];
+      const totalQueries = dayHistory.length;
+      const apiQueries = dayHistory.filter(h => h.sourceType?.includes('API')).length;
+      
+      analytics.push({
+        name: dayName,
+        queries: totalQueries,
+        api: apiQueries,
+      });
+    }
+    
+    return analytics;
   }
 }
 

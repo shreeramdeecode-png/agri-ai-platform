@@ -12,29 +12,30 @@ interface DashboardStats {
   activeSessions: number;
 }
 
+interface AnalyticsData {
+  name: string;
+  queries: number;
+  api: number;
+}
+
 export default function AdminDashboard() {
-  const { data: stats, isLoading } = useQuery<DashboardStats>({
+  const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/admin/dashboard"],
+  });
+
+  const { data: analytics, isLoading: analyticsLoading } = useQuery<AnalyticsData[]>({
+    queryKey: ["/api/admin/analytics"],
   });
 
   const { data: recentLogs } = useQuery<AdminLog[]>({
     queryKey: ["/api/admin/logs"],
   });
 
-  if (isLoading) {
+  if (statsLoading || analyticsLoading) {
     return <div className="p-8 text-white">Loading dashboard...</div>;
   }
 
-  // Mock chart data - in real app, would be from API
-  const chartData = [
-    { name: "Mon", queries: 400, api: 240 },
-    { name: "Tue", queries: 300, api: 139 },
-    { name: "Wed", queries: 600, api: 380 },
-    { name: "Thu", queries: 500, api: 430 },
-    { name: "Fri", queries: 700, api: 480 },
-    { name: "Sat", queries: 900, api: 590 },
-    { name: "Sun", queries: 800, api: 500 },
-  ];
+  const chartData = analytics || [];
 
   const statCards = [
     {
@@ -128,19 +129,25 @@ export default function AdminDashboard() {
             <CardDescription className="text-gray-400">Last 7 days performance</CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#424769" />
-                <XAxis dataKey="name" stroke="#9ca3af" />
-                <YAxis stroke="#9ca3af" />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#2d3250", border: "1px solid #424769", color: "#fff" }}
-                  labelStyle={{ color: "#fff" }}
-                />
-                <Line type="monotone" dataKey="queries" stroke="#f87171" strokeWidth={2} />
-                <Line type="monotone" dataKey="api" stroke="#60a5fa" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
+            {chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#424769" />
+                  <XAxis dataKey="name" stroke="#9ca3af" />
+                  <YAxis stroke="#9ca3af" />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#2d3250", border: "1px solid #424769", color: "#fff" }}
+                    labelStyle={{ color: "#fff" }}
+                  />
+                  <Line type="monotone" dataKey="queries" stroke="#f87171" strokeWidth={2} name="Total Queries" />
+                  <Line type="monotone" dataKey="api" stroke="#60a5fa" strokeWidth={2} name="API Queries" />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[300px]">
+                <p className="text-gray-400">No analytics data available</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

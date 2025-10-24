@@ -349,6 +349,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/admin/analytics", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const analytics = await storage.getQueryAnalytics();
+      res.json(analytics);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/admin/users", authMiddleware, adminMiddleware, async (req, res) => {
     try {
       const users = await storage.getAllUsers();
