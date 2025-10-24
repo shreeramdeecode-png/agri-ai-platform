@@ -102,6 +102,13 @@ export default function UserLogin() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {!isSignup && (
+              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <p className="text-xs font-semibold text-emerald-800 mb-1">Test Account</p>
+                <p className="text-xs text-emerald-700">Email: user@agrisearch.com</p>
+                <p className="text-xs text-emerald-700">Password: user123</p>
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="space-y-4">
               {isSignup && (
                 <div className="space-y-2">

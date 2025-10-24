@@ -61,6 +61,11 @@ export default function AdminLogin() {
           <CardDescription>Sign in to access the admin panel</CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-xs font-semibold text-blue-800 mb-1">Admin Test Account</p>
+            <p className="text-xs text-blue-700">Email: admin@agrisearch.com</p>
+            <p className="text-xs text-blue-700">Password: admin123</p>
+          </div>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="admin-email" data-testid="label-email">Email</Label>
