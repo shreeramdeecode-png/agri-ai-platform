@@ -1,0 +1,175 @@
+Build a complete AI-Powered Agriculture Search Platform with dual interfaces (Admin Panel + User Website) using the uploaded BRD document as the specification.
+PROJECT SETUP
+Tech Stack:
+
+Frontend: React + Material-UI + Tailwind CSS
+Backend: Node.js + Express.js
+Database: Replit PostgreSQL
+Auth: JWT-based authentication
+AI: OpenAI GPT-4o/Vision API
+
+Project Structure:
+/
+├── client/          # React frontend (Vite)
+├── server/          # Express backend
+├── uploads/         # File storage
+└── .env            # Environment variables
+```
+
+## **DEVELOPMENT PHASES**
+
+### **PHASE 1: Project Initialization**
+1. Set up monorepo structure with client and server folders
+2. Initialize React app with Vite in `/client` folder
+3. Initialize Express app in `/server` folder
+4. Configure Replit PostgreSQL connection
+5. Create `.env` file with required variables:
+```
+   DATABASE_URL=your_replit_postgres_url
+   JWT_SECRET=your_jwt_secret
+   OPENAI_API_KEY=your_openai_key
+   PORT=3000
+```
+
+### **PHASE 2: Database Schema**
+Create PostgreSQL tables as per BRD:
+- users (id, email, password_hash, full_name, role, is_active, created_at, updated_at)
+- documents (id, user_id, filename, file_path, extracted_text, file_size, upload_date)
+- images (id, user_id, filename, file_path, extracted_data, file_size, upload_date)
+- search_history (id, user_id, query, extracted_params, source_type, results, agent_used, execution_time, created_at)
+- api_settings (id, key_name, key_value, is_active, updated_at)
+- admin_logs (id, admin_id, action, target_entity, target_id, details, created_at)
+
+### **PHASE 3: Backend API Development**
+Build Express server with:
+- JWT authentication middleware
+- Multer for file uploads
+- pdf-parse for PDF text extraction
+- OpenAI API integration (GPT-4o for text, GPT-4 Vision for images)
+- Router agent pattern for query classification
+- Agriculture agent for API mapping
+- External API connectors (FEWSNET, CHIRPS, FAOSTAT, HDX)
+
+**API Endpoints:**
+```
+/api/auth/signup
+/api/auth/login
+/api/auth/reset-password
+/api/user/profile
+/api/search/query
+/api/search/history
+/api/documents/upload
+/api/documents/list
+/api/images/upload
+/api/admin/users
+/api/admin/dashboard
+/api/admin/logs
+/api/admin/settings
+PHASE 4: Admin Panel (React + Material-UI)
+Build admin interface at /admin route with:
+
+Secure admin login
+Dashboard with stats (total users, queries today, API/PDF/Image breakdown)
+User management (view, activate/deactivate, delete, view user's documents)
+Document & image management
+Search logs viewer
+Settings page (configure OpenAI & agriculture API keys)
+Admin profile update
+
+Admin Components:
+
+AdminLayout with sidebar navigation
+Dashboard with charts and metrics
+UserManagement with data table
+DocumentManagement with file viewer
+SearchLogs with filters
+Settings with API key configuration
+
+PHASE 5: User Website (React + Material-UI)
+Build user interface at / route with:
+
+Login & signup pages
+Natural language search interface
+PDF upload & processing
+Image upload & basic interpretation
+Search results UI with source labels (API/PDF/Image/Hybrid)
+Search history with delete functionality
+User profile management
+
+User Components:
+
+UserLayout with header navigation
+SearchInterface with free-text input
+SearchResults showing merged API + PDF + Image results
+SearchHistory with source tags
+PDFUpload with drag-drop
+ImageUpload with preview
+UserProfile with password change
+
+PHASE 6: AI Integration
+Implement OpenAI workflow:
+
+Intent Extraction: Use GPT-4o to extract crop, country, date range from query
+Router Agent: Classify query to Agriculture domain
+Agriculture Agent: Map query to external APIs and/or PDF context
+Hybrid Processing: Merge API + PDF + Image results
+Response Generation: Format results with source attribution
+
+PHASE 7: Routing Configuration
+Configure routes:
+
+Main domain / → User Website
+/admin → Admin Panel
+/api/* → Backend API
+JWT authentication for protected routes
+Role-based access control (admin vs user)
+
+PHASE 8: UI/UX Requirements
+
+Mobile-responsive design
+Modern Material-UI components matching design standards
+Loading states and error handling
+Toast notifications for user feedback
+Smooth transitions and animations
+Accessibility (WCAG 2.1 AA compliance)
+
+PHASE 9: Testing & Deployment
+
+Test all authentication flows
+Test search with API/PDF/Image sources
+Test admin CRUD operations
+Verify mobile responsiveness
+Configure Replit deployment settings
+Set up environment variables in Replit Secrets
+
+IMPLEMENTATION PRIORITY:
+
+✅ Database schema + PostgreSQL setup
+✅ Backend API with authentication
+✅ Admin Panel UI and functionality
+✅ User Website UI and search interface
+✅ OpenAI integration (Router + Agriculture Agent)
+✅ PDF/Image upload processing
+✅ External API connectors
+✅ Testing and bug fixes
+✅ Production deployment
+
+KEY REQUIREMENTS FROM BRD:
+
+Natural language search using OpenAI GPT
+PDF document upload and semantic search
+Basic image text/data extraction (NO generation/editing)
+Router + single Agriculture agent (extensible for future domains)
+Hybrid query handling (merge API + PDF + Image results)
+Admin panel for user/document/settings management
+Search history with source tracking
+Secure JWT authentication
+Role-based access (admin/user)
+
+OUT OF SCOPE:
+
+Image generation/editing (DALL·E)
+Real-time video analysis
+Complex OCR for handwritten documents
+Voice input/transcription
+Offline mode
