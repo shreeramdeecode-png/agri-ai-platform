@@ -2,7 +2,12 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import type { Request, Response, NextFunction } from "express";
 
-const JWT_SECRET = process.env.JWT_SECRET || "default-secret-key";
+// Require JWT_SECRET to be set
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET environment variable is required for security. Please set it in your environment.");
+}
+
+const JWT_SECRET = process.env.JWT_SECRET;
 
 export interface JwtPayload {
   userId: string;
