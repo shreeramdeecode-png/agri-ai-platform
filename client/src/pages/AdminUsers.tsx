@@ -13,6 +13,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { z } from "zod";
+import type { User } from "@shared/schema";
 
 const addUserSchema = z.object({
   fullName: z.string().min(1, "Full name is required"),
@@ -31,7 +32,7 @@ export default function AdminUsers() {
   const [filter, setFilter] = useState<"all" | "active" | "inactive">("all");
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
 
-  const { data: users, isLoading } = useQuery({ queryKey: ["/api/admin/users"] });
+  const { data: users, isLoading } = useQuery<User[]>({ queryKey: ["/api/admin/users"] });
 
   const form = useForm({
     resolver: zodResolver(addUserSchema),

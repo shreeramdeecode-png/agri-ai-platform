@@ -4,10 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { X } from "lucide-react";
+import type { SearchHistory } from "@shared/schema";
 
 export default function HistoryPage() {
   const { toast } = useToast();
-  const { data: history, isLoading } = useQuery({ queryKey: ["/api/search/history"] });
+  const { data: history, isLoading } = useQuery<SearchHistory[]>({ queryKey: ["/api/search/history"] });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {

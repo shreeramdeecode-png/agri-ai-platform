@@ -3,13 +3,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Users, Search, Zap, Activity, Download, Settings as SettingsIcon, Bell, FileBarChart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import type { AdminLog } from "@shared/schema";
+
+interface DashboardStats {
+  totalUsers: number;
+  queriesToday: number;
+  apiQueries: number;
+  activeSessions: number;
+}
 
 export default function AdminDashboard() {
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/admin/dashboard"],
   });
 
-  const { data: recentLogs } = useQuery({
+  const { data: recentLogs } = useQuery<AdminLog[]>({
     queryKey: ["/api/admin/logs"],
   });
 

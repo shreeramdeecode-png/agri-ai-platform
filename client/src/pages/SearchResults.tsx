@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TrendingUp, Download, Share2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import type { SearchHistory } from "@shared/schema";
 
 export default function SearchResults() {
-  const { data: history } = useQuery({ 
+  const { data: history } = useQuery<SearchHistory[]>({ 
     queryKey: ["/api/search/history"],
   });
 

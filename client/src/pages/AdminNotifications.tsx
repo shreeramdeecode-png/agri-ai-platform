@@ -5,13 +5,14 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
+import type { Notification } from "@shared/schema";
 
 export default function AdminNotifications() {
   const { toast } = useToast();
   const [filter, setFilter] = useState<"all" | "today">("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
 
-  const { data: notifications, isLoading } = useQuery({
+  const { data: notifications, isLoading } = useQuery<Notification[]>({
     queryKey: ["/api/admin/notifications"],
   });
 

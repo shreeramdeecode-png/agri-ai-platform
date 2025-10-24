@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { generateToken, comparePassword, authMiddleware, adminMiddleware } from "./utils/auth";
@@ -14,6 +14,22 @@ import { fetchAgricultureData } from "./utils/external-apis";
 import { insertUserSchema, insertSearchHistorySchema, insertApiSettingSchema } from "@shared/schema";
 import path from "path";
 import fs from "fs/promises";
+
+interface MulterFile {
+  fieldname: string;
+  originalname: string;
+  encoding: string;
+  mimetype: string;
+  size: number;
+  destination: string;
+  filename: string;
+  path: string;
+  buffer: Buffer;
+}
+
+interface MulterRequest extends Request {
+  file?: MulterFile;
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -224,7 +240,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Document routes
-  app.post("/api/documents/upload", authMiddleware, upload.single("file"), async (req, res) => {
+  app.post("/api/documents/upload", authMiddleware, upload.single("file"), async (req: MulterRequest, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -271,7 +287,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Image routes
-  app.post("/api/images/upload", authMiddleware, upload.single("file"), async (req, res) => {
+  app.post("/api/images/upload", authMiddleware, upload.single("file"), async (req: MulterRequest, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });

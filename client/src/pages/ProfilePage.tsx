@@ -8,11 +8,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
+import type { User } from "@shared/schema";
 
 export default function ProfilePage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const { data: profile } = useQuery({ queryKey: ["/api/user/profile"] });
+  const { data: profile } = useQuery<User>({ queryKey: ["/api/user/profile"] });
   
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");

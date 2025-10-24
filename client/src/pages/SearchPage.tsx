@@ -7,13 +7,14 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Mic, TrendingUp, Cloud, BarChart2 } from "lucide-react";
 import { useLocation } from "wouter";
+import type { SearchHistory } from "@shared/schema";
 
 export default function SearchPage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [query, setQuery] = useState("");
 
-  const { data: recentSearches, isLoading } = useQuery({ 
+  const { data: recentSearches, isLoading } = useQuery<SearchHistory[]>({ 
     queryKey: ["/api/search/history"],
   });
 
