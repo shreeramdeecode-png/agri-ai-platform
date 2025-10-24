@@ -1,7 +1,7 @@
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
-import pdfParse from "pdf-parse";
+import * as pdfParse from "pdf-parse";
 
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
