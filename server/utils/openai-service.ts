@@ -23,26 +23,39 @@ export interface AgricultureData {
 }
 
 export async function extractQueryIntent(query: string): Promise<ExtractedParams> {
+  const today = new Date().toISOString().split('T')[0];
+  
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: [
       {
         role: "system",
         content: `You are an AI routing and parameter extraction engine for an agriculture intelligence platform.
+Today's date is ${today}.
 
 Rules:
 - Return STRICT JSON only
 - No explanations
-- No markdown`
+- No markdown
+- For dates, use ISO format (YYYY-MM-DD)
+- If user asks for "current" or "latest", leave date_start and date_end as null to get most recent
+- If user specifies a year (e.g., "2024"), set date_start to "2024-01-01" and date_end to "2024-12-31"
+- If user specifies a month (e.g., "January 2025"), set appropriate date range`
       },
       {
         role: "user",
         content: `Extract parameters from the following query.
 
 Return JSON with:
-domain, intent, crop, country, time_period.
-
-If any value is missing, return null.
+{
+  "domain": "agriculture|health|finance|general",
+  "intent": "price|production|weather|food_security|general",
+  "crop": "commodity name or null",
+  "country": "country name or null",
+  "region": "region/state name or null",
+  "date_start": "YYYY-MM-DD or null for latest",
+  "date_end": "YYYY-MM-DD or null for latest"
+}
 
 User Query:
 ${query}`
@@ -58,8 +71,11 @@ ${query}`
     return {
       crop: parsed.crop || undefined,
       country: parsed.country || undefined,
-      region: undefined,
-      dateRange: parsed.time_period ? { start: parsed.time_period, end: parsed.time_period } : undefined,
+      region: parsed.region || undefined,
+      dateRange: (parsed.date_start || parsed.date_end) ? { 
+        start: parsed.date_start || undefined, 
+        end: parsed.date_end || undefined 
+      } : undefined,
       intent: parsed.intent || query
     };
   } catch {

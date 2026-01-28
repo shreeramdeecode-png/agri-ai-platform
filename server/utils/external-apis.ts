@@ -49,14 +49,22 @@ export async function fetchFromFEWSNET(params: ExtractedParams): Promise<Externa
     const commodity = params.crop || "maize";
     const appId = await getAppIdentifier();
     
+    const apiParams: any = {
+      app_identifier: appId,
+      location_name: country,
+      output_format: "json",
+      limit: 100
+    };
+    
+    if (params.dateRange?.start) {
+      apiParams.reference_period_start_min = params.dateRange.start;
+    }
+    if (params.dateRange?.end) {
+      apiParams.reference_period_end_max = params.dateRange.end;
+    }
+    
     const response = await axios.get(`${HDX_HAPI_BASE}/food/food-price`, {
-      params: {
-        app_identifier: appId,
-        commodity_category: commodity.toLowerCase().includes('rice') ? 'cereals and tubers' : undefined,
-        location_name: country,
-        output_format: "json",
-        limit: 50
-      },
+      params: apiParams,
       timeout: 45000,
       headers: {
         'Accept': 'application/json'
@@ -79,32 +87,43 @@ export async function fetchFromFEWSNET(params: ExtractedParams): Promise<Externa
         new Date(b.reference_period_start).getTime() - new Date(a.reference_period_start).getTime()
       );
       
+      const mostRecentRecord = sortedData[0];
+      const mostRecentDate = mostRecentRecord.reference_period_start;
+      
+      const currentPriceRecords = sortedData.filter((record: any) => 
+        record.reference_period_start === mostRecentDate
+      );
+      
       const priceRecords = sortedData.map((record: any) => ({
         crop: record.commodity_name || commodity,
         country: record.location_name || country,
         market: record.market_name || "National",
+        region: record.admin1_name || "",
         price: record.price || 0,
         unit: record.unit || "kg",
         currency: record.currency_code || "USD",
         date: record.reference_period_start || new Date().toISOString().split('T')[0],
-        source: "FEWS NET"
+        source: "HDX HAPI"
       }));
 
       const latestPrice = priceRecords[0];
-      const avgPrice = priceRecords.reduce((sum: number, r: FewsNetPriceData) => sum + r.price, 0) / priceRecords.length;
+      const avgPrice = currentPriceRecords.reduce((sum: number, r: any) => sum + (r.price || 0), 0) / currentPriceRecords.length;
 
       return {
-        source: "FEWS NET",
+        source: "HDX HAPI",
         data: {
           crop: latestPrice.crop,
           country: latestPrice.country,
+          market: latestPrice.market,
+          region: latestPrice.region,
           currentPrice: latestPrice.price,
           averagePrice: Math.round(avgPrice * 100) / 100,
           unit: latestPrice.unit,
           currency: latestPrice.currency,
           lastUpdated: latestPrice.date,
           priceHistory: priceRecords.slice(0, 6),
-          recordCount: priceRecords.length
+          recordCount: priceRecords.length,
+          dataNote: params.dateRange?.start ? `Data for period: ${params.dateRange.start}` : "Most recent available data"
         },
         timestamp: new Date()
       };
