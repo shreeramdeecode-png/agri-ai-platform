@@ -1,6 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Button } from "@/components/ui/button";
-import { Home, Search, MessageSquare, History, Upload, BarChart3, User, LogOut } from "lucide-react";
+import { MessageSquarePlus, History, User, LogOut } from "lucide-react";
 
 export default function UserLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -12,17 +11,20 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
     setLocation("/");
   };
 
+  const handleNewChat = () => {
+    localStorage.removeItem("activeConversation");
+    window.dispatchEvent(new CustomEvent("newChat"));
+    setLocation("/search");
+  };
+
   const sidebarItems = [
-    { path: "/search", label: "Home", icon: Home },
-    { path: "/search", label: "Search", icon: Search },
+    { path: "/search", label: "New Chat", icon: MessageSquarePlus, onClick: handleNewChat },
     { path: "/history", label: "History", icon: History },
-    { path: "/documents", label: "Upload", icon: Upload },
-    { path: "/profile", label: "Analytics", icon: BarChart3 },
     { path: "/profile", label: "Settings", icon: User },
   ];
 
   const topNavItems = [
-    { path: "/search", label: "Dashboard" },
+    { path: "/search", label: "Chat" },
     { path: "/history", label: "History" },
     { path: "/profile", label: "Profile" },
   ];
@@ -40,6 +42,23 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
           {sidebarItems.map((item) => {
             const Icon = item.icon;
             const isActive = location === item.path;
+            
+            if (item.onClick) {
+              return (
+                <button
+                  key={item.label}
+                  onClick={item.onClick}
+                  className={`flex flex-col items-center gap-1 transition-colors ${
+                    isActive ? "text-emerald-400" : "text-gray-400 hover:text-emerald-400"
+                  }`}
+                  data-testid={`link-${item.label.toLowerCase().replace(' ', '-')}`}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span className="text-[10px]">{item.label}</span>
+                </button>
+              );
+            }
+            
             return (
               <Link key={item.path + item.label} href={item.path}>
                 <a

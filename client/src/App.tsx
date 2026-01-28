@@ -17,8 +17,6 @@ import AdminLogs from "@/pages/AdminLogs";
 import AdminSettings from "@/pages/AdminSettings";
 import AdminNotifications from "@/pages/AdminNotifications";
 import ChatPage from "@/pages/ChatPage";
-import DocumentsPage from "@/pages/DocumentsPage";
-import ImagesPage from "@/pages/ImagesPage";
 import HistoryPage from "@/pages/HistoryPage";
 import ProfilePage from "@/pages/ProfilePage";
 
@@ -88,12 +86,6 @@ function Router() {
 
       <Route path="/search">
         {() => <ProtectedRoute component={ChatPage} layout={UserLayout} />}
-      </Route>
-      <Route path="/documents">
-        {() => <ProtectedRoute component={DocumentsPage} layout={UserLayout} />}
-      </Route>
-      <Route path="/images">
-        {() => <ProtectedRoute component={ImagesPage} layout={UserLayout} />}
       </Route>
       <Route path="/history">
         {() => <ProtectedRoute component={HistoryPage} layout={UserLayout} />}

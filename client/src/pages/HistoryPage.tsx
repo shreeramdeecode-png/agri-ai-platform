@@ -3,11 +3,13 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { X } from "lucide-react";
+import { useLocation } from "wouter";
+import { X, MessageSquare } from "lucide-react";
 import type { SearchHistory } from "@shared/schema";
 
 export default function HistoryPage() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const { data: history, isLoading } = useQuery<SearchHistory[]>({ queryKey: ["/api/search/history"] });
 
   const deleteMutation = useMutation({
@@ -52,31 +54,40 @@ export default function HistoryPage() {
 
   if (isLoading) return <div className="p-8 text-white">Loading history...</div>;
 
+  const handleContinueChat = (item: any) => {
+    localStorage.setItem("activeConversation", JSON.stringify(item));
+    setLocation("/search");
+  };
+
   const renderSearchItem = (item: any) => (
     <Card
       key={item.id}
-      className="bg-[#2a3749] border-[#3a4759] p-5 hover:border-emerald-500/50 transition-colors"
+      className="bg-[#2a3749] border-[#3a4759] p-5 hover:border-emerald-500/50 transition-colors cursor-pointer"
       data-testid={`history-${item.id}`}
+      onClick={() => handleContinueChat(item)}
     >
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
+            <MessageSquare className="w-4 h-4 text-emerald-400" />
             <h3 className="font-semibold text-white" data-testid={`text-query-${item.id}`}>
               {item.query}
             </h3>
           </div>
           <p className="text-sm text-gray-400 mb-3">
-            {item.results?.answer?.substring(0, 150) || "No answer available"}
+            {item.results?.answer?.substring(0, 150) || "No answer available"}...
           </p>
           <div className="flex gap-4 text-xs text-gray-500">
             <span>{new Date(item.createdAt).toLocaleDateString()}</span>
             <span>• {item.sourceType || "API"}</span>
-            <span>• {item.agentUsed || "Search Agent"}</span>
+            <span>• Click to continue</span>
           </div>
         </div>
         <button
-          onClick={() => deleteMutation.mutate(item.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            deleteMutation.mutate(item.id);
+          }}
           className="text-gray-400 hover:text-red-400 transition-colors p-2"
           data-testid={`button-delete-${item.id}`}
         >

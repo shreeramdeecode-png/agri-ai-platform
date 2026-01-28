@@ -24,38 +24,62 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [conversationContext, setConversationContext] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const initialized = useRef(false);
 
   const { data: history } = useQuery<SearchHistory[]>({
     queryKey: ["/api/search/history"],
   });
 
   useEffect(() => {
-    if (history && history.length > 0 && messages.length === 0) {
-      const initialMessages: Message[] = history.slice(0, 10).reverse().flatMap((item: any) => {
-        const results = item.results as any;
-        return [
+    const handleNewChat = () => {
+      setMessages([]);
+      setQuery("");
+      setAttachments([]);
+      setConversationContext("");
+      initialized.current = true;
+    };
+
+    window.addEventListener("newChat", handleNewChat);
+    return () => window.removeEventListener("newChat", handleNewChat);
+  }, []);
+
+  useEffect(() => {
+    if (initialized.current) return;
+    
+    const activeConversation = localStorage.getItem("activeConversation");
+    if (activeConversation) {
+      try {
+        const conversationData = JSON.parse(activeConversation);
+        const results = conversationData.results as any;
+        const loadedMessages: Message[] = [
           {
-            id: `user-${item.id}`,
+            id: `user-${conversationData.id}`,
             type: "user" as const,
-            content: item.query,
-            timestamp: new Date(item.createdAt),
+            content: conversationData.query,
+            timestamp: new Date(conversationData.createdAt),
           },
           {
-            id: `assistant-${item.id}`,
+            id: `assistant-${conversationData.id}`,
             type: "assistant" as const,
             content: results?.answer || "No response available",
             results: results,
-            executionTime: item.executionTime,
-            timestamp: new Date(item.createdAt),
+            executionTime: conversationData.executionTime,
+            timestamp: new Date(conversationData.createdAt),
           },
         ];
-      });
-      setMessages(initialMessages);
+        setMessages(loadedMessages);
+        setConversationContext(conversationData.query + " - " + (results?.answer || "").slice(0, 500));
+        localStorage.removeItem("activeConversation");
+        initialized.current = true;
+      } catch (e) {
+        console.error("Failed to load conversation", e);
+      }
     }
-  }, [history]);
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -84,9 +108,12 @@ export default function ChatPage() {
 
   const searchMutation = useMutation({
     mutationFn: async (searchQuery: string) => {
+      const fullQuery = conversationContext 
+        ? `Follow-up question (previous context: ${conversationContext.slice(0, 300)}): ${searchQuery}`
+        : searchQuery;
       return apiRequest("/api/search/query", {
         method: "POST",
-        body: JSON.stringify({ query: searchQuery }),
+        body: JSON.stringify({ query: fullQuery }),
       });
     },
     onSuccess: (data) => {
@@ -101,6 +128,10 @@ export default function ChatPage() {
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, assistantMessage]);
+      
+      setConversationContext((prev) => 
+        (prev + " " + data.answer).slice(-1000)
+      );
     },
     onError: (error: any) => {
       toast({
