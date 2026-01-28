@@ -88,12 +88,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
       <div className="flex-1 flex flex-col">
         <header className="bg-[#1a2332] border-b border-[#2a3749]">
           <div className="flex items-center justify-between px-8 py-4">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center">
-                <span className="text-white font-bold">A</span>
-              </div>
-              <span className="text-white font-semibold text-lg">AgriSearch</span>
-            </div>
+            <div />
 
             <nav className="flex items-center gap-8">
               {topNavItems.map((item) => {
@@ -121,7 +116,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
 
-        <main className="flex-1 p-8 overflow-auto">{children}</main>
+        <main className="flex-1 p-8 overflow-y-auto scrollbar-hide">{children}</main>
       </div>
     </div>
   );
