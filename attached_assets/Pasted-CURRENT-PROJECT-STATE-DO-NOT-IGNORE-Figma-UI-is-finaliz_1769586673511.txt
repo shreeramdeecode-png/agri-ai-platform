@@ -1,0 +1,307 @@
+CURRENT PROJECT STATE (DO NOT IGNORE)
+
+Figma UI is finalized and already implemented
+
+Frontend built using React + Tailwind
+
+User Login & Admin Login are completed
+
+Backend is Node.js + Express
+
+Database is PostgreSQL
+
+Project is running on Replit
+
+OpenAI API key is available in .env
+
+Authentication uses JWT
+
+domain/ → User website
+
+domain/admin → Admin panel
+
+Your task is to complete the full end-to-end functionality so that ALL UI screens (User + Admin) work with REAL backend logic and REAL data.
+
+❌ No mock data
+❌ No placeholders
+
+🎯 OBJECTIVE
+
+Build a fully working production-ready system with:
+
+Router + Single Domain Agent (Agriculture only)
+
+OpenAI GPT-4o / GPT-4 Vision integration
+
+Real agriculture data using FEWS NET
+
+PDF upload & question answering (text-based PDFs only)
+
+Basic image understanding (charts / printed text only)
+
+Fully functional User Panel
+
+Fully functional Admin Panel
+
+Only ONE agent (Agriculture) must be implemented.
+
+🧠 AI & AGENT ARCHITECTURE (MANDATORY)
+🔁 DATA FLOW (MUST MATCH EXACTLY)
+User Query / Upload PDF / Upload Image
+      ↓
+OpenAI GPT-4o → Extract Params & Intent
+      ↓
+Router → Classify to Agriculture Agent
+      ↓
+Agriculture Agent → FEWS NET API or PDF/Image Context
+      ↓
+Merge Results if Hybrid
+      ↓
+Render in UI with Source Labels
+      ↓
+Save Query + Result + Source in DB
+
+🧠 OPENAI PROMPT (USE EXACTLY)
+SYSTEM PROMPT
+You are an AI routing and parameter extraction engine for an agriculture intelligence platform.
+
+Rules:
+- Return STRICT JSON only
+- No explanations
+- No markdown
+
+USER PROMPT
+Extract parameters from the following query.
+
+Return JSON with:
+domain, intent, crop, country, time_period.
+
+If any value is missing, return null.
+
+User Query:
+{{USER_QUERY}}
+
+EXPECTED RESPONSE
+{
+  "domain": "agriculture",
+  "intent": "price_lookup",
+  "crop": "maize",
+  "country": "Kenya",
+  "time_period": "current month"
+}
+
+🧩 ROUTER MODULE
+
+Create:
+
+/router/router.js
+
+
+Responsibilities:
+
+Call OpenAI for parameter extraction
+
+Route query to Agriculture Agent
+
+Architecture must allow future agents, but only Agriculture is implemented
+
+🌾 AGRICULTURE AGENT (ONLY ONE)
+
+Create:
+
+/agents/agricultureAgent.js
+
+
+Responsibilities:
+
+Receive structured params from Router
+
+Decide data source:
+
+FEWS NET API
+
+PDF content
+
+Image content
+
+Normalize response
+
+Add source labels
+
+🌐 FEWS NET API (FIXED — DO NOT CHANGE)
+✅ USE THIS EXACT ENDPOINT
+https://data.humdata.org/dataset/fewsnet-prices/resource/9e9b1f5f-6b4a-4e43-8a06-0a2f7f9b8e2d/download/fewsnet-prices.csv
+
+IMPLEMENTATION RULES
+
+Fetch CSV from the above URL
+
+Parse CSV server-side
+
+Filter by:
+
+commodity → crop
+
+country
+
+Latest available month if time not specified
+
+Handle missing data gracefully
+
+Create:
+
+/services/agricultureApis.js
+
+NORMALIZED OUTPUT FORMAT
+{
+  "crop": "maize",
+  "country": "Kenya",
+  "price": 45.2,
+  "unit": "kg",
+  "currency": "USD",
+  "date": "2024-03",
+  "source": "FEWS NET"
+}
+
+📄 PDF SUPPORT (NO OCR)
+
+Endpoint:
+
+POST /api/upload/pdf
+
+
+Rules:
+
+Accept text-based PDFs only
+
+Extract text using pdf-parse or equivalent
+
+Store extracted text per user
+
+OpenAI answers ONLY from extracted text
+
+If PDF has no extractable text, return a clear error message
+
+❌ No OCR
+❌ No scanned PDFs
+
+🖼️ IMAGE SUPPORT (NO OCR)
+
+Endpoint:
+
+POST /api/upload/image
+
+
+Rules:
+
+Accept JPG / PNG
+
+Use GPT-4o Vision
+
+Interpret:
+
+Printed text
+
+Charts
+
+Tables
+
+❌ No handwritten text
+
+❌ No image generation
+
+❌ No DALL·E
+
+🔌 API ENDPOINTS (MANDATORY)
+MAIN QUERY
+POST /api/query
+
+
+Request:
+
+{
+  "query": "What is maize price in Kenya this month?"
+}
+
+
+Response:
+
+{
+  "agent": "agriculture",
+  "answer": "...",
+  "source": ["FEWS NET"],
+  "type": "API"
+}
+
+🧾 DATABASE REQUIREMENTS (REAL DATA ONLY)
+
+Store:
+
+user_id
+
+query
+
+agent
+
+source (API / PDF / Image / Hybrid)
+
+response
+
+created_at
+
+🖥️ FRONTEND REQUIREMENTS (VERY IMPORTANT)
+USER PANEL
+
+All screens must be functional:
+
+Search → /api/query
+
+PDF upload → /api/upload/pdf
+
+Image upload → /api/upload/image
+
+Results show:
+
+Answer
+
+Source labels
+
+Search history fetched from DB
+
+No dummy data anywhere
+
+ADMIN PANEL
+
+All screens must be functional:
+
+Dashboard:
+
+Total users
+
+Total queries
+
+API vs PDF vs Image counts
+
+User list (real DB users)
+
+View user queries
+
+View uploaded PDFs/images
+
+Settings to update API keys
+
+🚫 STRICT CONSTRAINTS (DO NOT VIOLATE)
+
+❌ No multiple agents
+
+❌ No RAG / vector DB
+
+❌ No OCR
+
+❌ No voice/audio
+
+❌ No image generation
+
+❌ No UI redesign
+
+❌ No payment or subscription logic

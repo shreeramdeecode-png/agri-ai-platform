@@ -28,22 +28,40 @@ export async function extractQueryIntent(query: string): Promise<ExtractedParams
     messages: [
       {
         role: "system",
-        content: `You are an agriculture domain expert. Extract structured parameters from user queries.
-Extract: crop type, country/region, date range, and overall intent.
-Return JSON format: { "crop": "...", "country": "...", "region": "...", "dateRange": { "start": "...", "end": "..." }, "intent": "..." }
-If information is not present, omit the field.`
+        content: `You are an AI routing and parameter extraction engine for an agriculture intelligence platform.
+
+Rules:
+- Return STRICT JSON only
+- No explanations
+- No markdown`
       },
       {
         role: "user",
-        content: query
+        content: `Extract parameters from the following query.
+
+Return JSON with:
+domain, intent, crop, country, time_period.
+
+If any value is missing, return null.
+
+User Query:
+${query}`
       }
     ],
-    temperature: 0.3,
+    temperature: 0,
+    response_format: { type: "json_object" }
   });
 
   const content = response.choices[0].message.content || "{}";
   try {
-    return JSON.parse(content);
+    const parsed = JSON.parse(content);
+    return {
+      crop: parsed.crop || undefined,
+      country: parsed.country || undefined,
+      region: undefined,
+      dateRange: parsed.time_period ? { start: parsed.time_period, end: parsed.time_period } : undefined,
+      intent: parsed.intent || query
+    };
   } catch {
     return { intent: query };
   }

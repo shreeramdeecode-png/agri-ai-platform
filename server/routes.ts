@@ -15,20 +15,8 @@ import { insertUserSchema, insertSearchHistorySchema, insertApiSettingSchema } f
 import path from "path";
 import fs from "fs/promises";
 
-interface MulterFile {
-  fieldname: string;
-  originalname: string;
-  encoding: string;
-  mimetype: string;
-  size: number;
-  destination: string;
-  filename: string;
-  path: string;
-  buffer: Buffer;
-}
-
 interface MulterRequest extends Request {
-  file?: MulterFile;
+  file?: Express.Multer.File;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
