@@ -20,13 +20,37 @@ export interface FewsNetPriceData {
 
 const HDX_HAPI_BASE = "https://hapi.humdata.org/api/v1";
 
+let cachedAppIdentifier: string | null = null;
+
+async function getAppIdentifier(): Promise<string> {
+  if (cachedAppIdentifier) return cachedAppIdentifier;
+  
+  try {
+    const response = await axios.get(`${HDX_HAPI_BASE}/encode_app_identifier`, {
+      params: {
+        application: "AgriSearch",
+        email: "agrisearch@replit.app"
+      },
+      timeout: 10000
+    });
+    
+    cachedAppIdentifier = response.data;
+    return cachedAppIdentifier as string;
+  } catch (error: any) {
+    console.error("Failed to get HDX app identifier:", error.message);
+    return "AgriSearch-default";
+  }
+}
+
 export async function fetchFromFEWSNET(params: ExtractedParams): Promise<ExternalApiResult | null> {
   try {
     const country = params.country || "Kenya";
     const commodity = params.crop || "maize";
+    const appId = await getAppIdentifier();
     
     const response = await axios.get(`${HDX_HAPI_BASE}/food/food-price`, {
       params: {
+        app_identifier: appId,
         commodity_name: commodity,
         location_name: country,
         output_format: "json",
@@ -98,9 +122,11 @@ export async function fetchFromFEWSNET(params: ExtractedParams): Promise<Externa
 export async function fetchFromHDXFoodSecurity(params: ExtractedParams): Promise<ExternalApiResult | null> {
   try {
     const country = params.country || "Kenya";
+    const appId = await getAppIdentifier();
     
     const response = await axios.get(`${HDX_HAPI_BASE}/food/food-security`, {
       params: {
+        app_identifier: appId,
         location_name: country,
         output_format: "json",
         limit: 10
@@ -145,9 +171,11 @@ export async function fetchFromHDXFoodSecurity(params: ExtractedParams): Promise
 export async function fetchFromHDXPopulation(params: ExtractedParams): Promise<ExternalApiResult | null> {
   try {
     const country = params.country || "Kenya";
+    const appId = await getAppIdentifier();
     
     const response = await axios.get(`${HDX_HAPI_BASE}/population-social/population`, {
       params: {
+        app_identifier: appId,
         location_name: country,
         output_format: "json",
         limit: 5
