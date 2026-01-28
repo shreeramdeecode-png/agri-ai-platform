@@ -6,11 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Image as ImageIcon, Upload, Loader2, Trash2 } from "lucide-react";
+import type { Image as ImageType } from "@shared/schema";
 
 export default function ImagesPage() {
   const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
-  const { data: images, isLoading } = useQuery({ queryKey: ["/api/images/list"] });
+  const { data: images, isLoading } = useQuery<ImageType[]>({ queryKey: ["/api/images/list"] });
 
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {

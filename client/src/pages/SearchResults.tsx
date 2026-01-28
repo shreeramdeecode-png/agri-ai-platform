@@ -27,20 +27,25 @@ export default function SearchResults() {
     results?.imageResults?.length > 0 ? "Image" : null,
   ].filter(Boolean).length;
 
-  // Extract price data from apiResults for chart
-  const priceData = apiResults.length > 0 && apiResults[0]?.data?.prices 
-    ? apiResults[0].data.prices.map((item: any) => ({
-        month: item.month || item.year || item.period || "N/A",
-        price: item.value || item.price || 0,
+  // Extract price data from apiResults for chart - handle FEWS NET format
+  const firstApiData = apiResults[0]?.data || {};
+  const priceHistory = firstApiData.priceHistory || firstApiData.prices || [];
+  const priceData = priceHistory.length > 0
+    ? priceHistory.map((item: any) => ({
+        month: item.date || item.month || item.year || item.period || "N/A",
+        price: item.price || item.value || 0,
       }))
     : [];
 
   // Extract current price, change %, and market status from first API result
-  const firstApiData = apiResults[0]?.data || {};
-  const currentPrice = firstApiData.currentPrice || firstApiData.price || "N/A";
-  const priceChange = firstApiData.change || firstApiData.percentChange || "N/A";
-  const marketStatus = firstApiData.status || firstApiData.trend || "N/A";
-  const commodity = firstApiData.commodity || firstApiData.item || "Agriculture Data";
+  const currentPrice = firstApiData.currentPrice || firstApiData.price || firstApiData.averagePrice || "N/A";
+  const priceChange = firstApiData.change || firstApiData.percentChange || (priceData.length >= 2 
+    ? Math.round(((priceData[0]?.price - priceData[priceData.length-1]?.price) / priceData[priceData.length-1]?.price) * 100) 
+    : "N/A");
+  const marketStatus = firstApiData.status || firstApiData.trend || (priceData.length >= 2 
+    ? (priceData[0]?.price > priceData[priceData.length-1]?.price ? "Rising" : "Stable")
+    : "N/A");
+  const commodity = firstApiData.crop || firstApiData.commodity || firstApiData.item || "Agriculture Data";
   const country = firstApiData.country || firstApiData.region || "";
   const source = apiResults[0]?.source || "API";
 
