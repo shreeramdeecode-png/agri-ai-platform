@@ -311,10 +311,10 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)] max-w-4xl mx-auto">
+    <div className="flex flex-col h-[calc(100vh-120px)] md:h-[calc(100vh-80px)] max-w-4xl mx-auto pb-16 md:pb-0">
       <div 
         ref={chatContainerRef}
-        className="flex-1 overflow-y-auto scrollbar-hide px-4 py-6 space-y-6"
+        className="flex-1 overflow-y-auto scrollbar-hide px-2 md:px-4 py-4 md:py-6 space-y-4 md:space-y-6"
       >
         {messages.length === 0 && (
           <div className="text-center py-16 space-y-6">

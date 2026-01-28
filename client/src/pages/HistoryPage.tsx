@@ -62,25 +62,25 @@ export default function HistoryPage() {
   const renderSearchItem = (item: any) => (
     <Card
       key={item.id}
-      className="bg-[#2a3749] border-[#3a4759] p-5 hover:border-emerald-500/50 transition-colors cursor-pointer"
+      className="bg-[#2a3749] border-[#3a4759] p-3 md:p-5 hover:border-emerald-500/50 transition-colors cursor-pointer"
       data-testid={`history-${item.id}`}
       onClick={() => handleContinueChat(item)}
     >
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
-            <MessageSquare className="w-4 h-4 text-emerald-400" />
-            <h3 className="font-semibold text-white" data-testid={`text-query-${item.id}`}>
+            <MessageSquare className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <h3 className="font-semibold text-white text-sm md:text-base truncate" data-testid={`text-query-${item.id}`}>
               {item.query}
             </h3>
           </div>
-          <p className="text-sm text-gray-400 mb-3">
-            {item.results?.answer?.substring(0, 150) || "No answer available"}...
+          <p className="text-xs md:text-sm text-gray-400 mb-2 md:mb-3 line-clamp-2">
+            {item.results?.answer?.substring(0, 100) || "No answer available"}...
           </p>
-          <div className="flex gap-4 text-xs text-gray-500">
+          <div className="flex flex-wrap gap-2 md:gap-4 text-[10px] md:text-xs text-gray-500">
             <span>{new Date(item.createdAt).toLocaleDateString()}</span>
-            <span>• {item.sourceType || "API"}</span>
-            <span>• Click to continue</span>
+            <span className="hidden sm:inline">• {item.sourceType || "API"}</span>
+            <span className="text-emerald-400">• Continue</span>
           </div>
         </div>
         <button
@@ -88,38 +88,38 @@ export default function HistoryPage() {
             e.stopPropagation();
             deleteMutation.mutate(item.id);
           }}
-          className="text-gray-400 hover:text-red-400 transition-colors p-2"
+          className="text-gray-400 hover:text-red-400 transition-colors p-1 md:p-2 flex-shrink-0"
           data-testid={`button-delete-${item.id}`}
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4 md:w-5 md:h-5" />
         </button>
       </div>
     </Card>
   );
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <Card className="bg-[#2a3749] border-[#3a4759] p-8">
-        <div className="flex items-start justify-between mb-6">
+    <div className="max-w-5xl mx-auto space-y-4 md:space-y-6 pb-20 md:pb-0">
+      <Card className="bg-[#2a3749] border-[#3a4759] p-4 md:p-8">
+        <div className="flex flex-col sm:flex-row items-start justify-between mb-4 md:mb-6 gap-3">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2" data-testid="heading-history">
+            <h1 className="text-2xl md:text-3xl font-bold text-white mb-1 md:mb-2" data-testid="heading-history">
               Search History
             </h1>
-            <p className="text-gray-400">Your recent searches and results</p>
+            <p className="text-sm md:text-base text-gray-400">Your recent searches and results</p>
           </div>
           <Button 
-            className="bg-red-500 hover:bg-red-600 text-white"
+            className="bg-red-500 hover:bg-red-600 text-white text-sm"
             data-testid="button-clear-all"
           >
             Clear All
           </Button>
         </div>
 
-        <div className="flex gap-3 mb-8">
-          <Button variant="secondary" size="sm" className="bg-[#3a4759] text-white hover:bg-[#4a5769]">
+        <div className="flex gap-2 md:gap-3 mb-6 md:mb-8">
+          <Button variant="secondary" size="sm" className="bg-[#3a4759] text-white hover:bg-[#4a5769] text-xs md:text-sm">
             All Time
           </Button>
-          <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
+          <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white text-xs md:text-sm">
             Recent
           </Button>
         </div>

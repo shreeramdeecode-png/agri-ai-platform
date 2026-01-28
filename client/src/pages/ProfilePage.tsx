@@ -75,26 +75,26 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <Card className="bg-[#2a3749] border-[#3a4759] p-8 mb-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center">
-              <span className="text-white font-bold text-3xl">
+    <div className="max-w-6xl mx-auto pb-20 md:pb-0">
+      <Card className="bg-[#2a3749] border-[#3a4759] p-4 md:p-8 mb-4 md:mb-6">
+        <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-4 md:gap-6 text-center sm:text-left">
+            <div className="w-16 h-16 md:w-24 md:h-24 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center flex-shrink-0">
+              <span className="text-white font-bold text-xl md:text-3xl">
                 {profile?.email?.[0]?.toUpperCase() || "J"}D
               </span>
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-white">{profile?.fullName || "John Doe"}</h2>
-              <p className="text-gray-400">{profile?.email || "john.doe@agritech.com"}</p>
-              <p className="text-sm text-gray-500">
+              <h2 className="text-xl md:text-2xl font-bold text-white">{profile?.fullName || "John Doe"}</h2>
+              <p className="text-sm md:text-base text-gray-400">{profile?.email || "john.doe@agritech.com"}</p>
+              <p className="text-xs md:text-sm text-gray-500">
                 Member since {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : "March 2024"}
               </p>
             </div>
           </div>
           <Button 
             onClick={handleLogout}
-            className="bg-red-500 hover:bg-red-600 text-white"
+            className="bg-red-500 hover:bg-red-600 text-white text-sm"
             data-testid="button-logout"
           >
             Logout
@@ -102,12 +102,12 @@ export default function ProfilePage() {
         </div>
       </Card>
 
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-white" data-testid="heading-profile">Profile Settings</h1>
+      <div className="space-y-4 md:space-y-6">
+        <h1 className="text-xl md:text-2xl font-bold text-white" data-testid="heading-profile">Profile Settings</h1>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="bg-[#2a3749] border-[#3a4759] p-6">
-            <h3 className="text-xl font-semibold text-white mb-6">Personal Information</h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <Card className="bg-[#2a3749] border-[#3a4759] p-4 md:p-6">
+            <h3 className="text-lg md:text-xl font-semibold text-white mb-4 md:mb-6">Personal Information</h3>
             
             <form onSubmit={handlePersonalInfoSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -194,8 +194,8 @@ export default function ProfilePage() {
             </form>
           </Card>
 
-          <Card className="bg-[#2a3749] border-[#3a4759] p-6">
-            <h3 className="text-xl font-semibold text-white mb-6">Security Settings</h3>
+          <Card className="bg-[#2a3749] border-[#3a4759] p-4 md:p-6">
+            <h3 className="text-lg md:text-xl font-semibold text-white mb-4 md:mb-6">Security Settings</h3>
             
             <form onSubmit={handlePasswordChange} className="space-y-4">
               <div className="space-y-2">
