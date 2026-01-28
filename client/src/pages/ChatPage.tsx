@@ -227,25 +227,59 @@ export default function ChatPage() {
     const pdfResults = results.pdfResults || [];
     const imageResults = results.imageResults || [];
     
+    const priceData = apiResults.find((api: any) => api.data?.currentPrice);
+    const hasRealData = priceData && priceData.data?.currentPrice;
+    
+    if (!hasRealData && pdfResults.length === 0 && imageResults.length === 0) {
+      return null;
+    }
+    
     return (
       <div className="mt-4 space-y-4">
-        {apiResults.length > 0 && (
+        {hasRealData && (
           <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-3">
               <span className="text-lg">🌾</span>
-              <span className="font-semibold text-emerald-700 dark:text-emerald-400">FEWS NET Data</span>
+              <span className="font-semibold text-emerald-700 dark:text-emerald-400">Market Data</span>
             </div>
-            {apiResults.map((api: any, idx: number) => {
-              const data = api.data || {};
-              return (
-                <div key={idx} className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                  {data.crop && <p><strong>Crop:</strong> {data.crop}</p>}
-                  {data.country && <p><strong>Country:</strong> {data.country}</p>}
-                  {data.currentPrice && <p><strong>Current Price:</strong> ${data.currentPrice}/MT</p>}
-                  {data.averagePrice && <p><strong>Average Price:</strong> ${data.averagePrice}/MT</p>}
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {priceData.data.crop && (
+                <div>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">Commodity</p>
+                  <p className="font-medium text-gray-800 dark:text-gray-200">{priceData.data.crop}</p>
                 </div>
-              );
-            })}
+              )}
+              {priceData.data.country && (
+                <div>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">Location</p>
+                  <p className="font-medium text-gray-800 dark:text-gray-200">{priceData.data.country}</p>
+                </div>
+              )}
+              {priceData.data.currentPrice && (
+                <div>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">Current Price</p>
+                  <p className="font-medium text-emerald-600 dark:text-emerald-400">
+                    {priceData.data.currency || ''} {priceData.data.currentPrice.toLocaleString()}/{priceData.data.unit || 'kg'}
+                  </p>
+                </div>
+              )}
+              {priceData.data.averagePrice && (
+                <div>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">Average Price</p>
+                  <p className="font-medium text-gray-800 dark:text-gray-200">
+                    {priceData.data.currency || ''} {priceData.data.averagePrice.toLocaleString()}/{priceData.data.unit || 'kg'}
+                  </p>
+                </div>
+              )}
+              {priceData.data.lastUpdated && (
+                <div className="col-span-2">
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">Last Updated</p>
+                  <p className="font-medium text-gray-800 dark:text-gray-200">
+                    {new Date(priceData.data.lastUpdated).toLocaleDateString()}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
         
