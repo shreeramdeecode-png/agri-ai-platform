@@ -1,6 +1,41 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { storage } from "./storage";
+
+async function seedDatabase() {
+  try {
+    const adminEmail = "admin@agrisearch.com";
+    const existingAdmin = await storage.getUserByEmail(adminEmail);
+    
+    if (!existingAdmin) {
+      await storage.createUser({
+        email: adminEmail,
+        password: "admin123",
+        fullName: "Admin User",
+        role: "admin",
+        isActive: true,
+      });
+      log("Admin user created");
+    }
+
+    const userEmail = "user@agrisearch.com";
+    const existingUser = await storage.getUserByEmail(userEmail);
+    
+    if (!existingUser) {
+      await storage.createUser({
+        email: userEmail,
+        password: "user123",
+        fullName: "Test User",
+        role: "user",
+        isActive: true,
+      });
+      log("Test user created");
+    }
+  } catch (error) {
+    console.error("Database seeding error:", error);
+  }
+}
 
 const app = express();
 app.use(express.json());
@@ -37,6 +72,7 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  await seedDatabase();
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
