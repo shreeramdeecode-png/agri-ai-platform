@@ -34,11 +34,12 @@ async function getAppIdentifier(): Promise<string> {
       timeout: 10000
     });
     
-    cachedAppIdentifier = response.data;
+    cachedAppIdentifier = response.data.encoded_app_identifier;
+    console.log("HDX App Identifier obtained:", cachedAppIdentifier);
     return cachedAppIdentifier as string;
   } catch (error: any) {
     console.error("Failed to get HDX app identifier:", error.message);
-    return "AgriSearch-default";
+    return "QWdyaVNlYXJjaDphZ3Jpc2VhcmNoQHJlcGxpdC5hcHA=";
   }
 }
 
