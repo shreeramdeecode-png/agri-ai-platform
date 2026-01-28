@@ -52,19 +52,34 @@ export async function fetchFromFEWSNET(params: ExtractedParams): Promise<Externa
     const response = await axios.get(`${HDX_HAPI_BASE}/food/food-price`, {
       params: {
         app_identifier: appId,
-        commodity_name: commodity,
+        commodity_category: commodity.toLowerCase().includes('rice') ? 'cereals and tubers' : undefined,
         location_name: country,
         output_format: "json",
-        limit: 20
+        limit: 50
       },
-      timeout: 15000,
+      timeout: 45000,
       headers: {
         'Accept': 'application/json'
       }
     });
+    
+    let priceData = response.data?.data || [];
+    
+    if (commodity && priceData.length > 0) {
+      const filtered = priceData.filter((record: any) => 
+        record.commodity_name?.toLowerCase().includes(commodity.toLowerCase())
+      );
+      if (filtered.length > 0) {
+        priceData = filtered;
+      }
+    }
 
-    if (response.data && response.data.data && response.data.data.length > 0) {
-      const priceRecords = response.data.data.map((record: any) => ({
+    if (priceData.length > 0) {
+      const sortedData = priceData.sort((a: any, b: any) => 
+        new Date(b.reference_period_start).getTime() - new Date(a.reference_period_start).getTime()
+      );
+      
+      const priceRecords = sortedData.map((record: any) => ({
         crop: record.commodity_name || commodity,
         country: record.location_name || country,
         market: record.market_name || "National",
@@ -132,7 +147,7 @@ export async function fetchFromHDXFoodSecurity(params: ExtractedParams): Promise
         output_format: "json",
         limit: 10
       },
-      timeout: 15000,
+      timeout: 30000,
       headers: {
         'Accept': 'application/json'
       }
@@ -181,7 +196,7 @@ export async function fetchFromHDXPopulation(params: ExtractedParams): Promise<E
         output_format: "json",
         limit: 5
       },
-      timeout: 15000,
+      timeout: 30000,
       headers: {
         'Accept': 'application/json'
       }
