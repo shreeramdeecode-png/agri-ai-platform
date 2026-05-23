@@ -37,9 +37,3 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
-
-[userenv]
-
-[userenv.shared]
-GEMINI_API_KEY = "AIzaSyBXe42b6qGRCziNQqxJ9Z_bw2geDh9uOxU"
-AI_PROVIDER = "gemini"

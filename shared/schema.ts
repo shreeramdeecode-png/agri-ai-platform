@@ -24,16 +24,6 @@ export const documents = pgTable("documents", {
   uploadDate: timestamp("upload_date").notNull().defaultNow(),
 });
 
-export const documentChunks = pgTable("document_chunks", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  documentId: varchar("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  chunkIndex: integer("chunk_index").notNull(),
-  content: text("content").notNull(),
-  embedding: text("embedding"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
 export const images = pgTable("images", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -42,23 +32,6 @@ export const images = pgTable("images", {
   extractedData: text("extracted_data"),
   fileSize: integer("file_size").notNull(),
   uploadDate: timestamp("upload_date").notNull().defaultNow(),
-});
-
-export const chatSessions = pgTable("chat_sessions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  title: text("title").notNull().default("New Chat"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-export const chatMessages = pgTable("chat_messages", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: varchar("session_id").notNull().references(() => chatSessions.id, { onDelete: "cascade" }),
-  role: text("role").notNull(),
-  content: text("content").notNull(),
-  metadata: jsonb("metadata"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const searchHistory = pgTable("search_history", {
@@ -93,7 +66,7 @@ export const adminLogs = pgTable("admin_logs", {
 
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  type: text("type").notNull(),
+  type: text("type").notNull(), // registration, error, update, warning, milestone
   title: text("title").notNull(),
   message: text("message").notNull(),
   isRead: boolean("is_read").notNull().default(false),
@@ -101,16 +74,41 @@ export const notifications = pgTable("notifications", {
 });
 
 // Insert schemas
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertDocumentSchema = createInsertSchema(documents).omit({ id: true, uploadDate: true });
-export const insertDocumentChunkSchema = createInsertSchema(documentChunks).omit({ id: true, createdAt: true });
-export const insertImageSchema = createInsertSchema(images).omit({ id: true, uploadDate: true });
-export const insertChatSessionSchema = createInsertSchema(chatSessions).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({ id: true, createdAt: true });
-export const insertSearchHistorySchema = createInsertSchema(searchHistory).omit({ id: true, createdAt: true });
-export const insertApiSettingSchema = createInsertSchema(apiSettings).omit({ id: true, updatedAt: true });
-export const insertAdminLogSchema = createInsertSchema(adminLogs).omit({ id: true, createdAt: true });
-export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertDocumentSchema = createInsertSchema(documents).omit({
+  id: true,
+  uploadDate: true,
+});
+
+export const insertImageSchema = createInsertSchema(images).omit({
+  id: true,
+  uploadDate: true,
+});
+
+export const insertSearchHistorySchema = createInsertSchema(searchHistory).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertApiSettingSchema = createInsertSchema(apiSettings).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export const insertAdminLogSchema = createInsertSchema(adminLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -119,17 +117,8 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export type Document = typeof documents.$inferSelect;
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 
-export type DocumentChunk = typeof documentChunks.$inferSelect;
-export type InsertDocumentChunk = z.infer<typeof insertDocumentChunkSchema>;
-
 export type Image = typeof images.$inferSelect;
 export type InsertImage = z.infer<typeof insertImageSchema>;
-
-export type ChatSession = typeof chatSessions.$inferSelect;
-export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
-
-export type ChatMessage = typeof chatMessages.$inferSelect;
-export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 
 export type SearchHistory = typeof searchHistory.$inferSelect;
 export type InsertSearchHistory = z.infer<typeof insertSearchHistorySchema>;
