@@ -14,7 +14,7 @@ const safetySettings = [
 
 function getFlashModel() {
   if (!geminiClient) throw new AIProviderError("gemini", "GEMINI_API_KEY not set");
-  return geminiClient.getGenerativeModel({ model: "gemini-2.0-flash", safetySettings });
+  return geminiClient.getGenerativeModel({ model: "gemini-2.5-flash", safetySettings });
 }
 
 export async function geminiExtractQueryIntent(query: string): Promise<any> {

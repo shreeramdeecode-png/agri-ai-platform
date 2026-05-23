@@ -473,7 +473,7 @@ export default function ChatPage() {
                         data-testid="text-ai-provider"
                       >
                         <span>{PROVIDER_ICONS[message.aiProvider] || "○"}</span>
-                        {message.aiProvider === "gemini" ? "Gemini 2.0 Flash" : "GPT-4o"}
+                        {message.aiProvider === "gemini" ? "Gemini 2.5 Flash" : "GPT-4o"}
                       </span>
                     )}
                   </div>
