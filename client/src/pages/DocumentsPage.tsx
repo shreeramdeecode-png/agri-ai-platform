@@ -10,7 +10,7 @@ import { FileText, Upload, Loader2, Trash2 } from "lucide-react";
 export default function DocumentsPage() {
   const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
-  const { data: documents, isLoading } = useQuery({ queryKey: ["/api/documents/list"] });
+  const { data: documents, isLoading } = useQuery<any[]>({ queryKey: ["/api/documents/list"] });
 
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {

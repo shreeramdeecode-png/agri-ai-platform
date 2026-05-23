@@ -3,8 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileText } from "lucide-react";
 
 export default function AdminDocuments() {
-  const { data: documents, isLoading } = useQuery({ queryKey: ["/api/admin/documents"] });
-  const { data: images } = useQuery({ queryKey: ["/api/admin/images"] });
+  const { data: documents, isLoading } = useQuery<any[]>({ queryKey: ["/api/admin/documents"] });
+  const { data: images } = useQuery<any[]>({ queryKey: ["/api/admin/images"] });
 
   if (isLoading) return <div className="p-8">Loading documents...</div>;
 
