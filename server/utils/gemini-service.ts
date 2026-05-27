@@ -231,64 +231,50 @@ export async function generateAgricultureResponse(
   const systemInstruction = `You are an enterprise-grade AI agricultural assistant with strict RAG grounding and source attribution rules.
 
 STRICT RULES:
-1. NEVER hallucinate. Only use facts that appear verbatim or clearly in the retrieved context below.
-2. DOCUMENT PRIORITY: Retrieved document chunks (PDFs) are the highest priority source.
-3. SOURCE ATTRIBUTION: Use the exact filename when attributing PDF content (e.g., "agri_ai_testing_document.pdf").
-4. IMAGE RULES — CRITICAL:
-   - Only set sections.image to a non-null value if the image OCR content DIRECTLY and SPECIFICALLY answers the question.
-   - If image content is not relevant to the question, set sections.image to null.
-   - NEVER write phrases like "Analyzed X image(s)" or "Image Source" as generic attribution.
-   - Do NOT say anything came from images if the actual answer came from a document.
-5. DOCUMENT RULES:
-   - Only set sections.document to non-null if document chunks contain relevant content.
-   - Attribute using exact filename, e.g.: "Uploaded PDF: agri_ai_testing_document.pdf [Doc-Section-1]"
-6. API RULES:
-   - Only set sections.api to non-null if API data directly answers the question.
-7. sources.documents/images/api must be TRUE only if that source ACTUALLY contributed to the answer.
-8. Confidence: 90-100% = multiple sources directly confirm; 70-89% = one source partially supports; <70% = uncertain.
-9. If no source contains the information, say exactly: "The uploaded sources do not contain this information."`;
+1. NEVER hallucinate or add information not found in retrieved sources.
+2. If information is missing, say: "The uploaded sources do not contain this information."
+3. Do NOT enrich answers with external world knowledge unless explicitly asked.
+4. Every factual claim must come from the provided retrieved context.
+5. Use precise source attribution with citation IDs like [Doc-Section-1], [Image-Q1], [API-HDXHAPI-1].
+6. Confidence scoring: 90-100% = directly supported by multiple sources; 70-89% = partially inferred; below 70% = uncertain.
+7. Document data takes priority over image assumptions if conflict exists.
+8. If retrieval confidence is low, say information is insufficient instead of speculating.`;
 
-  const prompt = `Answer the following agricultural query using ONLY the retrieved data provided. Do NOT use external world knowledge.
+  const prompt = `You are answering the following agricultural query. Use ONLY the provided retrieved data — do not add external knowledge.
 
 QUESTION: ${query}
 
 EXTRACTED PARAMETERS: ${JSON.stringify(params)}
 
---- RETRIEVED DOCUMENT CHUNKS (highest priority) ---
+--- RETRIEVED DOCUMENT CHUNKS ---
 ${pdfBlock}
 
---- RETRIEVED IMAGE/OCR DATA (only use if directly relevant to the question) ---
+--- RETRIEVED IMAGE/OCR DATA ---
 ${imageBlock}
 
 --- RETRIEVED API DATA ---
 ${apiBlock}
 
-IMPORTANT: 
-- If pdfBlock says "No document data available", set sections.document to null and sources.documents to false.
-- If imageBlock says "No image data available" OR image content does not directly answer the question, set sections.image to null and sources.images to false.
-- If apiBlock says "No API data available" OR API data does not answer the question, set sections.api to null and sources.api to false.
-- Never attribute document content as image content or vice versa.
-
-Return ONLY a valid JSON object (no markdown, no code fences) with EXACTLY this structure:
+Return your answer as a valid JSON object (no markdown, no code fences) with EXACTLY this structure:
 {
-  "answer": "<concise narrative answer citing the exact source, e.g. 'According to agri_ai_testing_document.pdf [Doc-Section-1], India achieved...'> OR 'The uploaded sources do not contain this information.'",
+  "answer": "<concise narrative answer using only retrieved data, or state sources do not contain this information>",
   "sections": {
-    "document": "<relevant PDF excerpt with exact filename and citation ID, OR null if documents not relevant>",
-    "image": "<relevant OCR content with citation ID only if image directly answers the question, OR null>",
-    "api": "<relevant API data summary with citation ID, OR null if API not relevant>",
-    "aiAnalysis": "<brief synthesis of what was found and from which sources, or note if sources are insufficient>"
+    "document": "<content from documents or null>",
+    "image": "<content from images or null>",
+    "api": "<content from API or null>",
+    "aiAnalysis": "<synthesis and analysis section>"
   },
-  "confidenceScore": "<e.g. 95%>",
+  "confidenceScore": "<percentage like 94%>",
   "sources": {
-    "documents": <true only if PDF content contributed>,
-    "images": <true only if image OCR content contributed>,
-    "api": <true only if API data contributed>
+    "documents": <true|false>,
+    "images": <true|false>,
+    "api": <true|false>
   },
   "citations": [
-    { "id": "<e.g. Doc-Section-1>", "label": "<e.g. agri_ai_testing_document.pdf — Section on food grain production>", "source": "<exact filename or API name>" }
+    { "id": "<citation id>", "label": "<human label>", "source": "<source name>" }
   ],
-  "grounded": <true if every claim is from retrieved context>,
-  "hallucinationDetected": <true if any claim is not in retrieved context>
+  "grounded": <true|false>,
+  "hallucinationDetected": <true|false>
 }`;
 
   try {
@@ -296,26 +282,21 @@ Return ONLY a valid JSON object (no markdown, no code fences) with EXACTLY this 
     const clean = raw.replace(/```json\n?|\n?```/g, "").trim();
     const parsed = JSON.parse(clean);
 
-    const toStr = (v: any): string | undefined => {
-      if (!v || v === "null" || v === "undefined" || String(v).trim() === "") return undefined;
-      return String(v).trim();
-    };
-
     return {
       answer: parsed.answer || "The sources do not contain sufficient information to answer this query.",
       sections: {
-        document: toStr(parsed.sections?.document),
-        image: toStr(parsed.sections?.image),
-        api: toStr(parsed.sections?.api),
-        aiAnalysis: toStr(parsed.sections?.aiAnalysis),
+        document: parsed.sections?.document || undefined,
+        image: parsed.sections?.image || undefined,
+        api: parsed.sections?.api || undefined,
+        aiAnalysis: parsed.sections?.aiAnalysis || undefined,
       },
       confidenceScore: parsed.confidenceScore || "N/A",
       sources: {
-        documents: parsed.sources?.documents === true,
-        images: parsed.sources?.images === true,
-        api: parsed.sources?.api === true,
+        documents: parsed.sources?.documents ?? hasPdf,
+        images: parsed.sources?.images ?? hasImage,
+        api: parsed.sources?.api ?? hasApi,
       },
-      citations: Array.isArray(parsed.citations) ? parsed.citations.filter((c: any) => c?.id && c?.source) : [],
+      citations: Array.isArray(parsed.citations) ? parsed.citations : [],
       grounded: parsed.grounded ?? true,
       hallucinationDetected: parsed.hallucinationDetected ?? false,
     };

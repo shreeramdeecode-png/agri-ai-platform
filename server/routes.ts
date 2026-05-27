@@ -152,24 +152,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return sendError(res, 400, "Currently only agriculture domain queries are supported");
       }
 
-      // Relevance helper — keyword overlap between query and a text block
-      const STOP = new Set(["the","is","in","it","of","and","or","for","a","an","to","what","how","are","was","were","does","do","with","has","have","been","its","this","that","from","by","at","me","my","their","your","we","our"]);
-      function scoreRelevance(text: string): number {
-        if (!text) return 0;
-        const words = query.toLowerCase().replace(/[^a-z0-9\s]/g,"").split(/\s+/).filter(w => w.length > 2 && !STOP.has(w));
-        if (!words.length) return 0;
-        const t = text.toLowerCase();
-        return words.filter(w => t.includes(w)).length / words.length;
-      }
-
-      // API data is only relevant for market/price/food-security queries
-      const MARKET_INTENTS = ["price","market","food_security","trade"];
-      const isMarketQuery = MARKET_INTENTS.includes(extractedParams.intent ?? "") ||
-        /\b(price|cost|market|food.?security|famine|hunger|commodity|trade|export|import|tonne|supply)\b/i.test(query);
-
-      // Step 2: Fetch data from multiple sources in parallel
-      const [rawApiResults, userDocuments, userImages] = await Promise.all([
-        isMarketQuery ? fetchAgricultureData(extractedParams) : Promise.resolve([]),
+      // Step 2: Fetch data from multiple sources (FEWSNET timeout won't fail the whole search)
+      const [apiResults, userDocuments, userImages] = await Promise.all([
+        fetchAgricultureData(extractedParams),
         storage.getUserDocuments(userId),
         storage.getUserImages(userId)
       ]);
@@ -177,38 +162,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Step 3: Search in PDFs — returns [{excerpt, filename, citationId}]
       const pdfResults = await searchInDocuments(query, userDocuments);
 
-      // Step 4: Images — ONLY include if their OCR text is relevant to this query
-      const imageSources = userImages
-        .slice(0, 5)
-        .filter(img => img.extractedData && scoreRelevance(img.extractedData) > 0)
-        .map((img, i) => ({
-          text: img.extractedData!,
-          citationId: `Image-Q${i + 1}`,
-        }));
+      // Step 4: Collect image analysis data with citation IDs
+      const imageSources: { text: string; citationId: string }[] = [];
+      userImages.slice(0, 3).forEach((image, i) => {
+        if (image.extractedData) {
+          imageSources.push({
+            text: image.extractedData,
+            citationId: `Image-Q${i + 1}`,
+          });
+        }
+      });
 
-      // Step 5: API — filter to only sources with data that matches the query context
-      const apiSources = rawApiResults
-        .filter(r => r.data && !r.data.error)
-        .filter(r => {
-          const dataText = JSON.stringify(r.data).toLowerCase();
-          return scoreRelevance(dataText) > 0;
-        })
-        .map(r => ({ source: r.source, data: r.data }));
-
-      // Step 6: Generate enterprise-grade structured response
+      // Step 5: Generate enterprise-grade structured response
       const structured = await generateAgricultureResponse(
         query,
         extractedParams,
-        apiSources,
+        apiResults.map(r => ({ source: r.source, data: r.data })),
         pdfResults,
         imageSources
       );
 
-      // Determine source type based on what ACTUALLY contributed (not what was passed in)
+      // Determine source type
       let sourceType = "";
-      if (structured.sources.api) sourceType += "API";
-      if (structured.sources.documents) sourceType += (sourceType ? "+PDF" : "PDF");
-      if (structured.sources.images) sourceType += (sourceType ? "+Image" : "Image");
+      if (apiResults.length > 0) sourceType += "API";
+      if (pdfResults.length > 0) sourceType += (sourceType ? "+PDF" : "PDF");
+      if (imageSources.length > 0) sourceType += (sourceType ? "+Image" : "Image");
       if (!sourceType) sourceType = "None";
 
       // Save to history
@@ -218,7 +196,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           query,
           extractedParams,
           sourceType,
-          results: { answer: structured.answer, structured, apiSources, pdfResults, imageSources },
+          results: { answer: structured.answer, structured, apiResults, pdfResults, imageSources },
           agentUsed: "Agriculture",
           executionTime: Date.now() - startTime,
         })
@@ -229,7 +207,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         structured,
         sourceType,
         extractedParams,
-        apiResults: apiSources,
+        apiResults: apiResults.map(r => ({ source: r.source, data: r.data })),
         pdfResults,
         imageSources,
         executionTime: Date.now() - startTime,
