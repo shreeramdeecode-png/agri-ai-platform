@@ -182,11 +182,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         imageSources
       );
 
-      // Determine source type
+      // Determine source type based on what ACTUALLY contributed (not what was passed in)
       let sourceType = "";
-      if (apiResults.length > 0) sourceType += "API";
-      if (pdfResults.length > 0) sourceType += (sourceType ? "+PDF" : "PDF");
-      if (imageSources.length > 0) sourceType += (sourceType ? "+Image" : "Image");
+      if (structured.sources.api) sourceType += "API";
+      if (structured.sources.documents) sourceType += (sourceType ? "+PDF" : "PDF");
+      if (structured.sources.images) sourceType += (sourceType ? "+Image" : "Image");
       if (!sourceType) sourceType = "None";
 
       // Save to history
