@@ -2,7 +2,7 @@
 
 ## Overview
 
-AgriSearch is a full-stack web application that provides natural language search capabilities for agriculture, climate, and market data. The platform leverages OpenAI GPT-4o/Vision to interpret user queries, route them through a domain-specific agent system, and fetch results from external APIs and uploaded documents. Users can upload PDF documents and images for AI-powered analysis, while administrators manage the platform through a secure admin panel.
+AgriSearch is a full-stack web application that provides natural language search capabilities for agriculture, climate, and market data. The platform leverages Google Gemini to interpret user queries, route them through a domain-specific agent system, and fetch results from external APIs and uploaded documents. Users can upload PDF documents and images for AI-powered analysis, while administrators manage the platform through a secure admin panel.
 
 The application serves two primary user types:
 - **End Users**: Access natural language search, document/image uploads, and query history

@@ -8,8 +8,9 @@ import {
   classifyDomain, 
   searchInDocuments,
   analyzeImage,
-  generateAgricultureResponse 
-} from "./utils/openai-service";
+  generateAgricultureResponse,
+  explainPdfDocument,
+} from "./utils/gemini-service";
 import { fetchAgricultureData } from "./utils/external-apis";
 import { insertUserSchema, insertSearchHistorySchema, insertApiSettingSchema } from "@shared/schema";
 import path from "path";
@@ -18,6 +19,12 @@ import fs from "fs/promises";
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
 }
+
+function sendError(res: any, statusCode: number, message: string, code?: string) {
+  return res.status(statusCode).json({ message, ...(code ? { code } : {}) });
+}
+
+const CLIENT_TIMEOUT = parseInt(process.env.REQUEST_TIMEOUT_MS || "180000", 10);
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -28,7 +35,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const existingUser = await storage.getUserByEmail(userData.email);
       if (existingUser) {
-        return res.status(400).json({ message: "Email already registered" });
+        return sendError(res, 400, "Email already registered");
       }
 
       const user = await storage.createUser(userData);
@@ -48,7 +55,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
       });
     } catch (error: any) {
-      res.status(400).json({ message: error.message || "Signup failed" });
+      sendError(res, 400, error.message || "Signup failed");
     }
   });
 
@@ -58,16 +65,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const user = await storage.getUserByEmail(email);
       if (!user) {
-        return res.status(401).json({ message: "Invalid credentials" });
+        return sendError(res, 401, "Invalid credentials");
       }
 
       if (!user.isActive) {
-        return res.status(403).json({ message: "Account is deactivated" });
+        return sendError(res, 403, "Account is deactivated");
       }
 
       const isValidPassword = await comparePassword(password, user.password);
       if (!isValidPassword) {
-        return res.status(401).json({ message: "Invalid credentials" });
+        return sendError(res, 401, "Invalid credentials");
       }
 
       const token = generateToken({
@@ -86,7 +93,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
       });
     } catch (error: any) {
-      res.status(500).json({ message: error.message || "Login failed" });
+      sendError(res, 500, error.message || "Login failed");
     }
   });
 
@@ -97,7 +104,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await storage.getUser(userId);
       
       if (!user) {
-        return res.status(404).json({ message: "User not found" });
+        return sendError(res, 404, "User not found");
       }
 
       res.json({
@@ -108,7 +115,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdAt: user.createdAt,
       });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -124,7 +131,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await storage.updateUser(userId, updates);
       res.json({ message: "Profile updated successfully", user });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -142,12 +149,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ]);
 
       if (domain !== "agriculture") {
-        return res.status(400).json({ 
-          message: "Currently only agriculture domain queries are supported" 
-        });
+        return sendError(res, 400, "Currently only agriculture domain queries are supported");
       }
 
-      // Step 2: Fetch data from multiple sources
+      // Step 2: Fetch data from multiple sources (FEWSNET timeout won't fail the whole search)
       const [apiResults, userDocuments, userImages] = await Promise.all([
         fetchAgricultureData(extractedParams),
         storage.getUserDocuments(userId),
@@ -157,7 +162,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Step 3: Search in PDFs
       const pdfResults = await searchInDocuments(query, userDocuments);
 
-      // Step 4: Analyze images (if any)
+      // Step 4: Collect image analysis data
       const imageResults: string[] = [];
       for (const image of userImages.slice(0, 3)) {
         if (image.extractedData) {
@@ -202,9 +207,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         pdfResults,
         imageResults,
         executionTime: Date.now() - startTime,
+        historyId: history.id,
       });
     } catch (error: any) {
-      res.status(500).json({ message: error.message || "Search failed" });
+      const status = error.statusCode || 500;
+      sendError(res, status, error.message || "Search failed", error.code);
     }
   });
 
@@ -214,7 +221,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const history = await storage.getUserSearchHistory(userId);
       res.json(history);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -223,7 +230,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteSearchHistory(req.params.id);
       res.json({ message: "History entry deleted" });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -231,11 +238,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/documents/upload", authMiddleware, upload.single("file"), async (req: MulterRequest, res) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
+        return sendError(res, 400, "No file uploaded");
       }
 
       const userId = (req as any).user.userId;
-      const extractedText = await extractPdfText(req.file.path);
+      let extractedText: string;
+
+      try {
+        extractedText = await extractPdfText(req.file.path);
+      } catch (pdfError: any) {
+        await deleteFile(req.file.path);
+        return sendError(res, pdfError.statusCode || 400, pdfError.message, pdfError.code);
+      }
 
       const document = await storage.createDocument({
         userId,
@@ -245,9 +259,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fileSize: req.file.size,
       });
 
-      res.json({ message: "Document uploaded successfully", document });
+      const explain = req.body?.explain === "true" || req.body?.explain === true;
+      const question = req.body?.question || undefined;
+
+      let explanation: string | undefined;
+
+      if (explain) {
+        try {
+          explanation = await explainPdfDocument(req.file.originalname, extractedText, question);
+          await storage.createSearchHistory(
+            insertSearchHistorySchema.parse({
+              userId,
+              query: question || `Auto-summary: ${req.file.originalname}`,
+              extractedParams: {},
+              sourceType: "PDF",
+              results: { answer: explanation, documentId: document.id },
+              agentUsed: "PDFExplain",
+              executionTime: 0,
+            })
+          );
+        } catch (explainError: any) {
+          console.error("Auto-explain error:", explainError.message);
+        }
+      }
+
+      res.json({ message: "Document uploaded successfully", document, explanation });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      const status = error.statusCode || 500;
+      sendError(res, status, error.message, error.code);
+    }
+  });
+
+  app.post("/api/documents/:id/explain", authMiddleware, async (req, res) => {
+    try {
+      const userId = (req as any).user.userId;
+      const doc = await storage.getDocument(req.params.id);
+
+      if (!doc) {
+        return sendError(res, 404, "Document not found");
+      }
+      if (doc.userId !== userId) {
+        return sendError(res, 403, "Access denied");
+      }
+      if (!doc.extractedText) {
+        return sendError(res, 400, "Document has no extractable text");
+      }
+
+      const { question } = req.body;
+      const explanation = await explainPdfDocument(doc.filename, doc.extractedText, question);
+
+      const history = await storage.createSearchHistory(
+        insertSearchHistorySchema.parse({
+          userId,
+          query: question || `Explain: ${doc.filename}`,
+          extractedParams: {},
+          sourceType: "PDF",
+          results: { answer: explanation, documentId: doc.id },
+          agentUsed: "PDFExplain",
+          executionTime: 0,
+        })
+      );
+
+      res.json({ explanation, historyId: history.id });
+    } catch (error: any) {
+      const status = error.statusCode || 500;
+      sendError(res, status, error.message || "Explain failed", error.code);
     }
   });
 
@@ -257,7 +333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const documents = await storage.getUserDocuments(userId);
       res.json(documents);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -270,7 +346,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json({ message: "Document deleted" });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -278,17 +354,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/images/upload", authMiddleware, upload.single("file"), async (req: MulterRequest, res) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
+        return sendError(res, 400, "No file uploaded");
       }
 
       const userId = (req as any).user.userId;
       
-      // Create base64 data URL for OpenAI
       const imageBuffer = await fs.readFile(req.file.path);
       const base64Image = imageBuffer.toString("base64");
       const dataUrl = `data:${req.file.mimetype};base64,${base64Image}`;
       
-      const extractedData = await analyzeImage(dataUrl);
+      let extractedData: string;
+      try {
+        extractedData = await analyzeImage(dataUrl);
+      } catch (imgError: any) {
+        await deleteFile(req.file.path);
+        return sendError(res, imgError.statusCode || 500, imgError.message, imgError.code);
+      }
 
       const image = await storage.createImage({
         userId,
@@ -300,7 +381,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ message: "Image uploaded successfully", image });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      const status = error.statusCode || 500;
+      sendError(res, status, error.message, error.code);
     }
   });
 
@@ -310,7 +392,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const images = await storage.getUserImages(userId);
       res.json(images);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -323,7 +405,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json({ message: "Image deleted" });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -333,7 +415,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stats = await storage.getDashboardStats();
       res.json(stats);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -342,7 +424,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const analytics = await storage.getQueryAnalytics();
       res.json(analytics);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -358,7 +440,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdAt: u.createdAt,
       })));
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -377,7 +459,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ message: "User updated", user });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -395,7 +477,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ message: "User deleted" });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -404,7 +486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const documents = await storage.getAllDocuments();
       res.json(documents);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -413,7 +495,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const images = await storage.getAllImages();
       res.json(images);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -422,7 +504,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const logs = await storage.getAllAdminLogs();
       res.json(logs);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -431,7 +513,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const history = await storage.getAllSearchHistory();
       res.json(history);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -440,7 +522,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const settings = await storage.getAllApiSettings();
       res.json(settings);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -469,7 +551,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ message: "Setting updated", setting });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -479,7 +561,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const notifications = await storage.getAllNotifications();
       res.json(notifications);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -488,7 +570,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.clearAllNotifications();
       res.json({ message: "All notifications cleared" });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -497,7 +579,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteNotification(req.params.id);
       res.json({ message: "Notification deleted" });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
@@ -508,7 +590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existingUser = await storage.getUserByEmail(userData.email);
       
       if (existingUser) {
-        return res.status(400).json({ message: "Email already exists" });
+        return sendError(res, 400, "Email already exists");
       }
 
       const user = await storage.createUser(userData);
@@ -523,10 +605,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ message: "User created", user });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      sendError(res, 500, error.message);
     }
   });
 
   const httpServer = createServer(app);
+
+  httpServer.timeout = CLIENT_TIMEOUT;
+
   return httpServer;
 }

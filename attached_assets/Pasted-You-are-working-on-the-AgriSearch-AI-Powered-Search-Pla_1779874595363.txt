@@ -1,0 +1,100 @@
+You are working on the AgriSearch (AI-Powered Search Platform) Repl. There is no .env file — all config must use Replit Secrets and the built-in PostgreSQL module.
+
+## Goals
+1. Migrate AI from OpenAI to Google Gemini for testing.
+2. Fix PDF upload: validate text extraction, auto-explain PDFs, support scoped document search.
+3. Add structured error handling (server + client).
+4. Ensure every search/PDF answer is stored in search_history and return historyId.
+5. Fix timeout errors (long search + external APIs).
+
+## Replit environment (do NOT use a .env file)
+Use Replit Secrets (Tools → Secrets) or the environment-secrets integration. Set:
+
+- GEMINI_API_KEY — required (user will provide; never commit or log it)
+- GEMINI_MODEL — optional, default gemini-2.0-flash
+- JWT_SECRET — required; generate a long random string if missing
+- REQUEST_TIMEOUT_MS — optional, default 180000
+- DATABASE_URL — use Replit’s PostgreSQL; if the Repl has the postgres module, DATABASE_URL is usually already set. If not, provision DB and set DATABASE_URL.
+- PORT — already 5000 in .replit; keep it
+
+Do NOT ask the user to paste secrets in chat. Tell them to add GEMINI_API_KEY and JWT_SECRET in Replit Secrets only.
+
+Remove reliance on OPENAI_API_KEY for runtime AI (admin UI can label Gemini instead of OpenAI).
+
+## Code changes to implement
+
+### 1. Dependencies
+npm install @google/generative-ai
+
+### 2. New server/utils/gemini-service.ts
+Replace OpenAI calls with @google/generative-ai:
+- analyzeQuery(query) — single call returning { domain, params } (merge intent + domain)
+- extractQueryIntent, classifyDomain — wrappers if needed
+- searchInDocuments(query, documents, documentIds?) — up to ~12000 chars per PDF
+- explainPdfDocument(filename, extractedText, question?)
+- analyzeImage(base64 data URL) — Gemini inline image parts
+- generateAgricultureResponse(...)
+Use process.env.GEMINI_API_KEY; throw clear 503 if missing.
+Model: process.env.GEMINI_MODEL || "gemini-2.0-flash"
+
+### 3. server/utils/errors.ts + server/utils/route-helpers.ts
+- AppError with statusCode + code
+- mapGeminiError()
+- sendError(res, error) — handle PdfExtractionError as 400
+
+### 4. server/utils/file-processor.ts
+- extractPdfText: throw if no extractable text (scanned PDFs not supported), don’t return ""
+
+### 5. server/routes.ts
+- Import from gemini-service (not openai-service)
+- POST /api/search/query: use analyzeQuery(); parallel fetchAgricultureData + searchInDocuments; accept documentIds in body; return historyId; use sendError()
+- POST /api/documents/upload: validate PDF text; optional explain=true (multipart field) → explainPdfDocument + save search_history; delete file on failure
+- POST /api/documents/:id/explain — explain existing PDF for user
+- Image upload: Gemini vision via analyzeImage
+- On createServer: server.timeout / requestTimeout = REQUEST_TIMEOUT_MS || 180000
+
+### 6. server/utils/external-apis.ts
+- Import ExtractedParams from gemini-service
+- Reduce FEWSNET axios timeout to ~25000ms; never fail entire search if API times out
+
+### 7. server/index.ts
+- Error middleware: don’t throw after res.json()
+
+### 8. client/src/lib/queryClient.ts
+- Parse JSON errors from API
+- AbortSignal.timeout: 120000 default, 180000 for /api/search/query
+
+### 9. client/src/pages/ChatPage.tsx
+- uploadFile: append explain=true for PDF-only uploads; fix id to result.document?.id / result.image?.id
+- PDF-only upload → show Gemini explanation; upload+query → pass documentIds to search
+- Better upload error messages from server
+
+### 10. client/src/pages/AdminSettings.tsx
+- Rename OpenAI key UI to Gemini (GEMINI_API_KEY in DB is optional; runtime uses env secret)
+
+### 11. openai-service.ts
+- Re-export from gemini-service for compatibility OR delete if unused
+
+### 12. Database
+Run: npm run db:push
+(Ensure search_history, documents, etc. exist.)
+
+### 13. Documentation
+Update replit.md env section: GEMINI_API_KEY, JWT_SECRET, DATABASE_URL, PORT=5000, REQUEST_TIMEOUT_MS.
+
+## After implementation
+1. Verify Replit Secrets: DATABASE_URL, JWT_SECRET, GEMINI_API_KEY.
+2. Run npm run dev (or use existing workflow on port 5000).
+3. Test:
+   - Login: user@agrisearch.com / user123
+   - Search: "maize price in Kenya"
+   - Upload a text-based PDF with no message → should get summary
+   - History page should show stored answers
+
+## Constraints
+- Never commit API keys.
+- Keep monorepo structure: client + server + shared.
+- Match existing code style; minimal unrelated changes.
+- If the codebase already has some of these files, diff and complete what’s missing rather than duplicating.
+
+Report what secrets the user must add manually in Replit Secrets when done.
