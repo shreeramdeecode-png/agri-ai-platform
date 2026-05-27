@@ -398,6 +398,35 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] md:h-[calc(100vh-80px)] max-w-4xl mx-auto pb-16 md:pb-0">
+
+      {/* ── Model selector bar ── */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#2a3749] bg-[#1a2535]">
+        <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">AI Model</span>
+        <div className="flex items-center gap-2">
+          {PROVIDERS.map((p) => (
+            <button
+              key={p.value}
+              onClick={() => handleProviderChange(p.value)}
+              data-testid={`button-select-model-${p.value}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                provider === p.value
+                  ? p.value === "openai"
+                    ? "bg-violet-500/20 text-violet-300 border border-violet-500/40"
+                    : "bg-blue-500/20 text-blue-300 border border-blue-500/40"
+                  : "text-gray-400 hover:text-gray-200 hover:bg-[#2a3749] border border-transparent"
+              }`}
+            >
+              <span>{p.icon}</span>
+              <span>{p.label}</span>
+              <span className={`text-[10px] opacity-60 hidden sm:inline`}>{p.model}</span>
+              {provider === p.value && (
+                <span className="w-1.5 h-1.5 rounded-full bg-current ml-0.5" />
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex-1 overflow-y-auto scrollbar-hide px-2 md:px-4 py-4 md:py-6 space-y-4 md:space-y-6">
         {messages.length === 0 && (
           <div className="text-center py-16 space-y-6">
