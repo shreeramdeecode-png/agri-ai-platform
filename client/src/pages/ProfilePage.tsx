@@ -75,8 +75,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto scrollbar-hide p-4 md:p-8">
-    <div className="max-w-6xl mx-auto pb-20 md:pb-8">
+    <div className="max-w-6xl mx-auto pb-20 md:pb-0">
       <Card className="bg-[#2a3749] border-[#3a4759] p-4 md:p-8 mb-4 md:mb-6">
         <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4">
           <div className="flex flex-col sm:flex-row items-center gap-4 md:gap-6 text-center sm:text-left">
@@ -264,7 +263,6 @@ export default function ProfilePage() {
           </Card>
         </div>
       </div>
-    </div>
     </div>
   );
 }

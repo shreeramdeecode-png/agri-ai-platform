@@ -98,8 +98,7 @@ export default function HistoryPage() {
   );
 
   return (
-    <div className="h-full overflow-y-auto scrollbar-hide p-4 md:p-8">
-    <div className="max-w-5xl mx-auto space-y-4 md:space-y-6 pb-20 md:pb-8">
+    <div className="max-w-5xl mx-auto space-y-4 md:space-y-6 pb-20 md:pb-0">
       <Card className="bg-[#2a3749] border-[#3a4759] p-4 md:p-8">
         <div className="flex flex-col sm:flex-row items-start justify-between mb-4 md:mb-6 gap-3">
           <div>
@@ -158,7 +157,6 @@ export default function HistoryPage() {
           </div>
         )}
       </Card>
-    </div>
     </div>
   );
 }

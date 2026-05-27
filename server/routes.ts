@@ -3,15 +3,14 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { generateToken, comparePassword, authMiddleware, adminMiddleware } from "./utils/auth";
 import { upload, extractPdfText, deleteFile } from "./utils/file-processor";
-import {
-  extractQueryIntent,
-  classifyDomain,
+import { 
+  extractQueryIntent, 
+  classifyDomain, 
   searchInDocuments,
   analyzeImage,
   generateAgricultureResponse,
   explainPdfDocument,
-  type AIProvider,
-} from "./utils/ai-router";
+} from "./utils/gemini-service";
 import { fetchAgricultureData } from "./utils/external-apis";
 import { insertUserSchema, insertSearchHistorySchema, insertApiSettingSchema } from "@shared/schema";
 import path from "path";
@@ -140,14 +139,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/search/query", authMiddleware, async (req, res) => {
     try {
       const userId = (req as any).user.userId;
-      const { query, provider: rawProvider } = req.body;
-      const provider: AIProvider = rawProvider === "openai" ? "openai" : "gemini";
+      const { query } = req.body;
       const startTime = Date.now();
 
       // Step 1: Extract intent and classify domain
       const [extractedParams, domain] = await Promise.all([
-        extractQueryIntent(provider, query),
-        classifyDomain(provider, query),
+        extractQueryIntent(query),
+        classifyDomain(query)
       ]);
 
       if (domain !== "agriculture") {
@@ -162,7 +160,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ]);
 
       // Step 3: Search in PDFs — returns [{excerpt, filename, citationId}]
-      const pdfResults = await searchInDocuments(provider, query, userDocuments);
+      const pdfResults = await searchInDocuments(query, userDocuments);
 
       // Step 4: Collect image analysis data with citation IDs
       const imageSources: { text: string; citationId: string }[] = [];
@@ -177,7 +175,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Step 5: Generate enterprise-grade structured response
       const structured = await generateAgricultureResponse(
-        provider,
         query,
         extractedParams,
         apiResults.map(r => ({ source: r.source, data: r.data })),
@@ -208,7 +205,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         answer: structured.answer,
         structured,
-        provider,
         sourceType,
         extractedParams,
         apiResults: apiResults.map(r => ({ source: r.source, data: r.data })),
@@ -313,9 +309,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return sendError(res, 400, "Document has no extractable text");
       }
 
-      const { question, provider: rawProvider } = req.body;
-      const provider: AIProvider = rawProvider === "openai" ? "openai" : "gemini";
-      const explanation = await explainPdfDocument(provider, doc.filename, doc.extractedText, question);
+      const { question } = req.body;
+      const explanation = await explainPdfDocument(doc.filename, doc.extractedText, question);
 
       const history = await storage.createSearchHistory(
         insertSearchHistorySchema.parse({
@@ -367,15 +362,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const userId = (req as any).user.userId;
-      const provider: AIProvider = req.body?.provider === "openai" ? "openai" : "gemini";
-
+      
       const imageBuffer = await fs.readFile(req.file.path);
       const base64Image = imageBuffer.toString("base64");
       const dataUrl = `data:${req.file.mimetype};base64,${base64Image}`;
-
+      
       let extractedData: string;
       try {
-        extractedData = await analyzeImage(provider, dataUrl);
+        extractedData = await analyzeImage(dataUrl);
       } catch (imgError: any) {
         await deleteFile(req.file.path);
         return sendError(res, imgError.statusCode || 500, imgError.message, imgError.code);
