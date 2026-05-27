@@ -1,9 +1,24 @@
 import { Link, useLocation } from "wouter";
 import { MessageSquarePlus, History, User, LogOut } from "lucide-react";
+import { useState } from "react";
+
+const AI_PROVIDERS = [
+  { value: "gemini", label: "Gemini", icon: "✦", color: "text-blue-300 border-blue-500/40 bg-blue-500/20" },
+  { value: "openai", label: "OpenAI", icon: "⬡", color: "text-violet-300 border-violet-500/40 bg-violet-500/20" },
+] as const;
 
 export default function UserLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const [provider, setProvider] = useState<"gemini" | "openai">(
+    () => (localStorage.getItem("selectedProvider") as "gemini" | "openai") || "gemini"
+  );
+
+  const handleProviderChange = (p: "gemini" | "openai") => {
+    setProvider(p);
+    localStorage.setItem("selectedProvider", p);
+    window.dispatchEvent(new CustomEvent("providerChanged", { detail: p }));
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -116,7 +131,26 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
               })}
             </nav>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 md:gap-3">
+              {/* Model switcher — always visible in header */}
+              <div className="flex items-center bg-[#0f1923] border border-[#2a3749] rounded-lg p-0.5 gap-0.5">
+                {AI_PROVIDERS.map((p) => (
+                  <button
+                    key={p.value}
+                    onClick={() => handleProviderChange(p.value)}
+                    data-testid={`header-model-${p.value}`}
+                    title={`Switch to ${p.label}`}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${
+                      provider === p.value
+                        ? `${p.color} border`
+                        : "text-gray-500 hover:text-gray-300 border border-transparent"
+                    }`}
+                  >
+                    <span>{p.icon}</span>
+                    <span className="hidden sm:inline">{p.label}</span>
+                  </button>
+                ))}
+              </div>
               <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
                 <span className="text-white text-sm">{user.email?.[0]?.toUpperCase() || "U"}</span>
               </div>
