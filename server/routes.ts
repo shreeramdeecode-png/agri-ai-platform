@@ -159,31 +159,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getUserImages(userId)
       ]);
 
-      // Step 3: Search in PDFs
+      // Step 3: Search in PDFs — returns [{excerpt, filename, citationId}]
       const pdfResults = await searchInDocuments(query, userDocuments);
 
-      // Step 4: Collect image analysis data
-      const imageResults: string[] = [];
-      for (const image of userImages.slice(0, 3)) {
+      // Step 4: Collect image analysis data with citation IDs
+      const imageSources: { text: string; citationId: string }[] = [];
+      userImages.slice(0, 3).forEach((image, i) => {
         if (image.extractedData) {
-          imageResults.push(image.extractedData);
+          imageSources.push({
+            text: image.extractedData,
+            citationId: `Image-Q${i + 1}`,
+          });
         }
-      }
+      });
 
-      // Step 5: Generate comprehensive response
-      const answer = await generateAgricultureResponse(
+      // Step 5: Generate enterprise-grade structured response
+      const structured = await generateAgricultureResponse(
         query,
         extractedParams,
-        apiResults.map(r => r.data),
+        apiResults.map(r => ({ source: r.source, data: r.data })),
         pdfResults,
-        imageResults
+        imageSources
       );
 
       // Determine source type
       let sourceType = "";
       if (apiResults.length > 0) sourceType += "API";
       if (pdfResults.length > 0) sourceType += (sourceType ? "+PDF" : "PDF");
-      if (imageResults.length > 0) sourceType += (sourceType ? "+Image" : "Image");
+      if (imageSources.length > 0) sourceType += (sourceType ? "+Image" : "Image");
       if (!sourceType) sourceType = "None";
 
       // Save to history
@@ -193,19 +196,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           query,
           extractedParams,
           sourceType,
-          results: { answer, apiResults, pdfResults, imageResults },
+          results: { answer: structured.answer, structured, apiResults, pdfResults, imageSources },
           agentUsed: "Agriculture",
           executionTime: Date.now() - startTime,
         })
       );
 
       res.json({
-        answer,
+        answer: structured.answer,
+        structured,
         sourceType,
         extractedParams,
         apiResults: apiResults.map(r => ({ source: r.source, data: r.data })),
         pdfResults,
-        imageResults,
+        imageSources,
         executionTime: Date.now() - startTime,
         historyId: history.id,
       });

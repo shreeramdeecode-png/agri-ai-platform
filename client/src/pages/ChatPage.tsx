@@ -4,18 +4,163 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Send, Paperclip, FileText, Image, X, Loader2 } from "lucide-react";
+import { Send, Paperclip, FileText, Image, X, Loader2, ShieldCheck, AlertTriangle, BookOpen, Globe, Camera, Brain, Hash } from "lucide-react";
 import type { SearchHistory } from "@shared/schema";
+
+interface CitationEntry {
+  id: string;
+  label: string;
+  source: string;
+}
+
+interface StructuredResponse {
+  answer: string;
+  sections: {
+    document?: string | null;
+    image?: string | null;
+    api?: string | null;
+    aiAnalysis?: string | null;
+  };
+  confidenceScore: string;
+  sources: {
+    documents: boolean;
+    images: boolean;
+    api: boolean;
+  };
+  citations: CitationEntry[];
+  grounded: boolean;
+  hallucinationDetected: boolean;
+}
 
 interface Message {
   id: string;
   type: "user" | "assistant";
   content: string;
-  query?: string;
+  structured?: StructuredResponse;
   results?: any;
   executionTime?: number;
   attachments?: { type: "pdf" | "image"; name: string; id?: string }[];
   timestamp: Date;
+}
+
+function ConfidenceBadge({ score }: { score: string }) {
+  const num = parseInt(score);
+  const color = num >= 90 ? "text-emerald-400 bg-emerald-400/10 border-emerald-400/30"
+    : num >= 70 ? "text-yellow-400 bg-yellow-400/10 border-yellow-400/30"
+    : "text-red-400 bg-red-400/10 border-red-400/30";
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold ${color}`}
+      data-testid="badge-confidence">
+      <ShieldCheck className="w-3 h-3" />
+      {score} confidence
+    </span>
+  );
+}
+
+function SectionBlock({ icon, title, content, colorClass }: {
+  icon: React.ReactNode;
+  title: string;
+  content: string;
+  colorClass: string;
+}) {
+  return (
+    <div className={`rounded-xl border p-4 space-y-2 ${colorClass}`}>
+      <div className="flex items-center gap-2">
+        {icon}
+        <span className="font-semibold text-sm">{title}</span>
+      </div>
+      <p className="text-sm leading-relaxed whitespace-pre-wrap opacity-90">{content}</p>
+    </div>
+  );
+}
+
+function StructuredResponseRenderer({ structured, executionTime }: { structured: StructuredResponse; executionTime?: number }) {
+  const { sections, confidenceScore, citations, sources, grounded, hallucinationDetected } = structured;
+  const hasSections = sections.document || sections.image || sections.api || sections.aiAnalysis;
+
+  return (
+    <div className="space-y-3 mt-3">
+      {/* Hallucination warning */}
+      {hallucinationDetected && (
+        <div className="flex items-center gap-2 text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 rounded-lg px-3 py-2">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          Some claims may not be fully supported by retrieved sources.
+        </div>
+      )}
+
+      {/* Source sections */}
+      {hasSections && (
+        <div className="space-y-3">
+          {sections.document && (
+            <SectionBlock
+              icon={<BookOpen className="w-4 h-4 text-blue-400" />}
+              title="Retrieved From Document"
+              content={sections.document}
+              colorClass="bg-blue-500/10 border-blue-500/20 text-blue-100"
+            />
+          )}
+          {sections.image && (
+            <SectionBlock
+              icon={<Camera className="w-4 h-4 text-purple-400" />}
+              title="Retrieved From Image"
+              content={sections.image}
+              colorClass="bg-purple-500/10 border-purple-500/20 text-purple-100"
+            />
+          )}
+          {sections.api && (
+            <SectionBlock
+              icon={<Globe className="w-4 h-4 text-emerald-400" />}
+              title="Retrieved From API"
+              content={sections.api}
+              colorClass="bg-emerald-500/10 border-emerald-500/20 text-emerald-100"
+            />
+          )}
+          {sections.aiAnalysis && (
+            <SectionBlock
+              icon={<Brain className="w-4 h-4 text-orange-400" />}
+              title="AI Analysis"
+              content={sections.aiAnalysis}
+              colorClass="bg-orange-500/10 border-orange-500/20 text-orange-100"
+            />
+          )}
+        </div>
+      )}
+
+      {/* Footer row: confidence + sources used */}
+      <div className="flex flex-wrap items-center gap-3 pt-1">
+        <ConfidenceBadge score={confidenceScore} />
+        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+          <span className="font-medium">Sources:</span>
+          {sources.documents && <span className="text-blue-400">📄 Documents</span>}
+          {sources.images && <span className="text-purple-400">🖼 Images</span>}
+          {sources.api && <span className="text-emerald-400">🌐 API</span>}
+          {!sources.documents && !sources.images && !sources.api && <span>None</span>}
+        </div>
+        {executionTime && (
+          <span className="text-xs text-gray-500 ml-auto">
+            {(executionTime / 1000).toFixed(2)}s
+          </span>
+        )}
+      </div>
+
+      {/* Citation mapping */}
+      {citations.length > 0 && (
+        <div className="bg-[#1a2535] border border-[#2a3749] rounded-xl p-3 space-y-1.5">
+          <div className="flex items-center gap-1.5 text-xs text-gray-400 font-semibold mb-2">
+            <Hash className="w-3 h-3" />
+            Citation Mapping
+          </div>
+          {citations.map((c) => (
+            <div key={c.id} className="text-xs text-gray-300 flex gap-2" data-testid={`citation-${c.id}`}>
+              <code className="text-emerald-400 shrink-0">[{c.id}]</code>
+              <span className="text-gray-400">→</span>
+              <span>{c.label || c.source}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function ChatPage() {
@@ -49,7 +194,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (initialized.current) return;
-    
+
     const activeConversation = localStorage.getItem("activeConversation");
     if (activeConversation) {
       try {
@@ -66,6 +211,7 @@ export default function ChatPage() {
             id: `assistant-${conversationData.id}`,
             type: "assistant" as const,
             content: results?.answer || "No response available",
+            structured: results?.structured,
             results: results,
             executionTime: conversationData.executionTime,
             timestamp: new Date(conversationData.createdAt),
@@ -88,27 +234,28 @@ export default function ChatPage() {
   const uploadFile = async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    
+
     const isPDF = file.type === "application/pdf";
     const endpoint = isPDF ? "/api/documents/upload" : "/api/images/upload";
-    
+
     const token = localStorage.getItem("token");
     const response = await fetch(endpoint, {
       method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: formData,
     });
-    
+
     if (!response.ok) {
-      throw new Error("Upload failed");
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || "Upload failed");
     }
-    
+
     return response.json();
   };
 
   const searchMutation = useMutation({
     mutationFn: async (searchQuery: string) => {
-      const fullQuery = conversationContext 
+      const fullQuery = conversationContext
         ? `Follow-up question (previous context: ${conversationContext.slice(0, 300)}): ${searchQuery}`
         : searchQuery;
       return apiRequest("/api/search/query", {
@@ -118,18 +265,19 @@ export default function ChatPage() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/search/history"] });
-      
+
       const assistantMessage: Message = {
         id: `assistant-${Date.now()}`,
         type: "assistant",
         content: data.answer || "I found some results for your query.",
+        structured: data.structured,
         results: data,
         executionTime: data.executionTime,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, assistantMessage]);
-      
-      setConversationContext((prev) => 
+
+      setConversationContext((prev) =>
         (prev + " " + data.answer).slice(-1000)
       );
     },
@@ -139,7 +287,7 @@ export default function ChatPage() {
         description: error.message,
         variant: "destructive",
       });
-      
+
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         type: "assistant",
@@ -155,7 +303,7 @@ export default function ChatPage() {
     if (!query.trim() && attachments.length === 0) return;
 
     const uploadedAttachments: { type: "pdf" | "image"; name: string; id?: string }[] = [];
-    
+
     if (attachments.length > 0) {
       setIsUploading(true);
       try {
@@ -169,10 +317,10 @@ export default function ChatPage() {
         }
         queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
         queryClient.invalidateQueries({ queryKey: ["/api/images"] });
-      } catch (error) {
+      } catch (error: any) {
         toast({
           title: "Upload Failed",
-          description: "Failed to upload attachments",
+          description: error.message || "Failed to upload attachments",
           variant: "destructive",
         });
         setIsUploading(false);
@@ -188,18 +336,18 @@ export default function ChatPage() {
       attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
       timestamp: new Date(),
     };
-    
+
     setMessages((prev) => [...prev, userMessage]);
     setQuery("");
     setAttachments([]);
-    
+
     if (query.trim()) {
       searchMutation.mutate(query);
     } else if (uploadedAttachments.length > 0) {
       const assistantMessage: Message = {
         id: `assistant-${Date.now()}`,
         type: "assistant",
-        content: `I've uploaded ${uploadedAttachments.length} file(s) successfully. You can now ask questions about these documents, and I'll include their content in my analysis.`,
+        content: `Successfully uploaded ${uploadedAttachments.length} file(s). You can now ask questions about these documents and I'll include their content in my grounded analysis.`,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, assistantMessage]);
@@ -220,99 +368,9 @@ export default function ChatPage() {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const formatApiResults = (results: any) => {
-    if (!results) return null;
-    
-    const apiResults = results.apiResults || [];
-    const pdfResults = results.pdfResults || [];
-    const imageResults = results.imageResults || [];
-    
-    const priceData = apiResults.find((api: any) => api.data?.currentPrice);
-    const hasRealData = priceData && priceData.data?.currentPrice;
-    
-    if (!hasRealData && pdfResults.length === 0 && imageResults.length === 0) {
-      return null;
-    }
-    
-    return (
-      <div className="mt-4 space-y-4">
-        {hasRealData && (
-          <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-lg">🌾</span>
-              <span className="font-semibold text-emerald-700 dark:text-emerald-400">Market Data</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              {priceData.data.crop && (
-                <div>
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Commodity</p>
-                  <p className="font-medium text-gray-800 dark:text-gray-200">{priceData.data.crop}</p>
-                </div>
-              )}
-              {priceData.data.country && (
-                <div>
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Location</p>
-                  <p className="font-medium text-gray-800 dark:text-gray-200">{priceData.data.country}</p>
-                </div>
-              )}
-              {priceData.data.currentPrice && (
-                <div>
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Current Price</p>
-                  <p className="font-medium text-emerald-600 dark:text-emerald-400">
-                    {priceData.data.currency || ''} {priceData.data.currentPrice.toLocaleString()}/{priceData.data.unit || 'kg'}
-                  </p>
-                </div>
-              )}
-              {priceData.data.averagePrice && (
-                <div>
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Average Price</p>
-                  <p className="font-medium text-gray-800 dark:text-gray-200">
-                    {priceData.data.currency || ''} {priceData.data.averagePrice.toLocaleString()}/{priceData.data.unit || 'kg'}
-                  </p>
-                </div>
-              )}
-              {priceData.data.lastUpdated && (
-                <div className="col-span-2">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Last Updated</p>
-                  <p className="font-medium text-gray-800 dark:text-gray-200">
-                    {new Date(priceData.data.lastUpdated).toLocaleDateString()}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-        
-        {pdfResults.length > 0 && (
-          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <FileText className="w-4 h-4 text-blue-600" />
-              <span className="font-semibold text-blue-700 dark:text-blue-400">Document Insights</span>
-            </div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Found relevant content in {pdfResults.length} document(s)
-            </p>
-          </div>
-        )}
-        
-        {imageResults.length > 0 && (
-          <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Image className="w-4 h-4 text-purple-600" />
-              <span className="font-semibold text-purple-700 dark:text-purple-400">Image Analysis</span>
-            </div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Analyzed {imageResults.length} image(s)
-            </p>
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] md:h-[calc(100vh-80px)] max-w-4xl mx-auto pb-16 md:pb-0">
-      <div 
+      <div
         ref={chatContainerRef}
         className="flex-1 overflow-y-auto scrollbar-hide px-2 md:px-4 py-4 md:py-6 space-y-4 md:space-y-6"
       >
@@ -322,7 +380,7 @@ export default function ChatPage() {
               What would you like to know?
             </h1>
             <p className="text-gray-400 max-w-lg mx-auto">
-              Ask anything about agriculture, climate, or market data. You can also attach PDFs and images for analysis.
+              Ask anything about agriculture, climate, or market data. Attach PDFs and images for grounded, cited analysis.
             </p>
             <div className="flex flex-wrap gap-3 justify-center mt-8">
               {["Maize prices in Kenya", "Food security Ethiopia", "Wheat market trends"].map((suggestion) => (
@@ -345,7 +403,7 @@ export default function ChatPage() {
             className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[85%] rounded-2xl px-5 py-4 ${
+              className={`max-w-[90%] rounded-2xl px-5 py-4 ${
                 message.type === "user"
                   ? "bg-emerald-500 text-white"
                   : "bg-[#2a3749] text-white"
@@ -369,14 +427,19 @@ export default function ChatPage() {
                   ))}
                 </div>
               )}
-              
+
               <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
-              
-              {message.type === "assistant" && message.results && (
-                formatApiResults(message.results)
+
+              {/* Enterprise structured response */}
+              {message.type === "assistant" && message.structured && (
+                <StructuredResponseRenderer
+                  structured={message.structured}
+                  executionTime={message.executionTime}
+                />
               )}
-              
-              {message.executionTime && (
+
+              {/* Fallback timing for non-structured responses */}
+              {message.type === "assistant" && !message.structured && message.executionTime && (
                 <p className="text-xs text-gray-400 mt-3">
                   Searched in {(message.executionTime / 1000).toFixed(2)}s
                 </p>
@@ -389,7 +452,7 @@ export default function ChatPage() {
           <div className="flex justify-start">
             <div className="bg-[#2a3749] rounded-2xl px-5 py-4 flex items-center gap-3">
               <Loader2 className="w-5 h-5 animate-spin text-emerald-400" />
-              <span className="text-gray-300">Searching agriculture data...</span>
+              <span className="text-gray-300">Retrieving and grounding sources...</span>
             </div>
           </div>
         )}
@@ -432,7 +495,7 @@ export default function ChatPage() {
             onChange={handleFileSelect}
             className="hidden"
           />
-          
+
           <Button
             type="button"
             variant="ghost"
