@@ -124,7 +124,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto scrollbar-hide">{children}</main>
+        <main className="flex-1 overflow-hidden">{children}</main>
 
         {/* Mobile Bottom Navigation */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#141d2b] border-t border-[#2a3749] flex justify-around py-3">
