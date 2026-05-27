@@ -139,7 +139,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/search/query", authMiddleware, async (req, res) => {
     try {
       const userId = (req as any).user.userId;
-      const { query } = req.body;
+      const { query, documentIds, imageIds } = req.body;
       const startTime = Date.now();
 
       // Step 1: Extract intent and classify domain
@@ -152,19 +152,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return sendError(res, 400, "Currently only agriculture domain queries are supported");
       }
 
-      // Step 2: Fetch data from multiple sources (FEWSNET timeout won't fail the whole search)
-      const [apiResults, userDocuments, userImages] = await Promise.all([
+      // Step 2: Fetch API data. Documents/images are REQUEST-SCOPED:
+      //   only include them if caller explicitly passed their IDs.
+      const scopedDocIds: string[] = Array.isArray(documentIds) ? documentIds : [];
+      const scopedImgIds: string[] = Array.isArray(imageIds) ? imageIds : [];
+
+      const [apiResults, scopedDocuments, scopedImages] = await Promise.all([
         fetchAgricultureData(extractedParams),
-        storage.getUserDocuments(userId),
-        storage.getUserImages(userId)
+        scopedDocIds.length > 0
+          ? storage.getUserDocuments(userId).then(docs => docs.filter(d => scopedDocIds.includes(d.id)))
+          : Promise.resolve([]),
+        scopedImgIds.length > 0
+          ? storage.getUserImages(userId).then(imgs => imgs.filter(i => scopedImgIds.includes(i.id)))
+          : Promise.resolve([]),
       ]);
 
-      // Step 3: Search in PDFs — returns [{excerpt, filename, citationId}]
-      const pdfResults = await searchInDocuments(query, userDocuments);
+      // Step 3: Search only in scoped PDFs
+      const pdfResults = scopedDocuments.length > 0
+        ? await searchInDocuments(query, scopedDocuments)
+        : [];
 
-      // Step 4: Collect image analysis data with citation IDs
+      // Step 4: Collect scoped image analysis data with citation IDs
       const imageSources: { text: string; citationId: string }[] = [];
-      userImages.slice(0, 3).forEach((image, i) => {
+      scopedImages.slice(0, 3).forEach((image, i) => {
         if (image.extractedData) {
           imageSources.push({
             text: image.extractedData,
@@ -207,6 +217,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         structured,
         sourceType,
         extractedParams,
+        documents_found: pdfResults.length,
+        images_found: imageSources.length,
+        sources_used: {
+          documents: pdfResults.map(p => p.filename),
+          images: imageSources.map(i => i.citationId),
+          apis: apiResults.map(r => r.source),
+        },
         apiResults: apiResults.map(r => ({ source: r.source, data: r.data })),
         pdfResults,
         imageSources,

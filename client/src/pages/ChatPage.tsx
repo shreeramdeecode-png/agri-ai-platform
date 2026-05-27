@@ -4,7 +4,10 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Send, Paperclip, FileText, Image, X, Loader2, ShieldCheck, AlertTriangle, BookOpen, Globe, Camera, Brain, Hash } from "lucide-react";
+import {
+  Send, Paperclip, FileText, Image, X, Loader2,
+  ShieldCheck, AlertTriangle, BookOpen, Globe, Camera, Brain, Hash,
+} from "lucide-react";
 import type { SearchHistory } from "@shared/schema";
 
 interface CitationEntry {
@@ -37,27 +40,35 @@ interface Message {
   type: "user" | "assistant";
   content: string;
   structured?: StructuredResponse;
+  documentsFound?: number;
+  imagesFound?: number;
+  apisFound?: number;
   results?: any;
   executionTime?: number;
-  attachments?: { type: "pdf" | "image"; name: string; id?: string }[];
+  attachments?: { type: "pdf" | "image"; name: string }[];
   timestamp: Date;
 }
 
 function ConfidenceBadge({ score }: { score: string }) {
-  const num = parseInt(score);
-  const color = num >= 90 ? "text-emerald-400 bg-emerald-400/10 border-emerald-400/30"
+  const num = parseInt(score) || 0;
+  const color =
+    num >= 90 ? "text-emerald-400 bg-emerald-400/10 border-emerald-400/30"
     : num >= 70 ? "text-yellow-400 bg-yellow-400/10 border-yellow-400/30"
     : "text-red-400 bg-red-400/10 border-red-400/30";
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold ${color}`}
-      data-testid="badge-confidence">
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold ${color}`}
+      data-testid="badge-confidence"
+    >
       <ShieldCheck className="w-3 h-3" />
       {score} confidence
     </span>
   );
 }
 
-function SectionBlock({ icon, title, content, colorClass }: {
+function SectionBlock({
+  icon, title, content, colorClass,
+}: {
   icon: React.ReactNode;
   title: string;
   content: string;
@@ -74,13 +85,26 @@ function SectionBlock({ icon, title, content, colorClass }: {
   );
 }
 
-function StructuredResponseRenderer({ structured, executionTime }: { structured: StructuredResponse; executionTime?: number }) {
-  const { sections, confidenceScore, citations, sources, grounded, hallucinationDetected } = structured;
-  const hasSections = sections.document || sections.image || sections.api || sections.aiAnalysis;
+function StructuredResponseRenderer({
+  structured, documentsFound, imagesFound, apisFound, executionTime,
+}: {
+  structured: StructuredResponse;
+  documentsFound: number;
+  imagesFound: number;
+  apisFound: number;
+  executionTime?: number;
+}) {
+  const { sections, confidenceScore, citations, hallucinationDetected } = structured;
+
+  // Gate each section on ACTUAL backend counts — never show if no real data
+  const showDocument = documentsFound > 0 && sections.document && sections.document.trim().length > 0;
+  const showImage    = imagesFound > 0   && sections.image    && sections.image.trim().length > 0;
+  const showApi      = apisFound > 0     && sections.api      && sections.api.trim().length > 0;
+  const showAnalysis = sections.aiAnalysis && sections.aiAnalysis.trim().length > 0;
+  const hasSections  = showDocument || showImage || showApi || showAnalysis;
 
   return (
     <div className="space-y-3 mt-3">
-      {/* Hallucination warning */}
       {hallucinationDetected && (
         <div className="flex items-center gap-2 text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 rounded-lg px-3 py-2">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
@@ -88,53 +112,51 @@ function StructuredResponseRenderer({ structured, executionTime }: { structured:
         </div>
       )}
 
-      {/* Source sections */}
       {hasSections && (
         <div className="space-y-3">
-          {sections.document && (
+          {showDocument && (
             <SectionBlock
               icon={<BookOpen className="w-4 h-4 text-blue-400" />}
               title="Retrieved From Document"
-              content={sections.document}
+              content={sections.document!}
               colorClass="bg-blue-500/10 border-blue-500/20 text-blue-100"
             />
           )}
-          {sections.image && (
+          {showImage && (
             <SectionBlock
               icon={<Camera className="w-4 h-4 text-purple-400" />}
               title="Retrieved From Image"
-              content={sections.image}
+              content={sections.image!}
               colorClass="bg-purple-500/10 border-purple-500/20 text-purple-100"
             />
           )}
-          {sections.api && (
+          {showApi && (
             <SectionBlock
               icon={<Globe className="w-4 h-4 text-emerald-400" />}
               title="Retrieved From API"
-              content={sections.api}
+              content={sections.api!}
               colorClass="bg-emerald-500/10 border-emerald-500/20 text-emerald-100"
             />
           )}
-          {sections.aiAnalysis && (
+          {showAnalysis && (
             <SectionBlock
               icon={<Brain className="w-4 h-4 text-orange-400" />}
               title="AI Analysis"
-              content={sections.aiAnalysis}
+              content={sections.aiAnalysis!}
               colorClass="bg-orange-500/10 border-orange-500/20 text-orange-100"
             />
           )}
         </div>
       )}
 
-      {/* Footer row: confidence + sources used */}
       <div className="flex flex-wrap items-center gap-3 pt-1">
         <ConfidenceBadge score={confidenceScore} />
         <div className="flex items-center gap-1.5 text-xs text-gray-400">
           <span className="font-medium">Sources:</span>
-          {sources.documents && <span className="text-blue-400">📄 Documents</span>}
-          {sources.images && <span className="text-purple-400">🖼 Images</span>}
-          {sources.api && <span className="text-emerald-400">🌐 API</span>}
-          {!sources.documents && !sources.images && !sources.api && <span>None</span>}
+          {documentsFound > 0 && <span className="text-blue-400">📄 {documentsFound} doc{documentsFound !== 1 ? "s" : ""}</span>}
+          {imagesFound > 0   && <span className="text-purple-400">🖼 {imagesFound} image{imagesFound !== 1 ? "s" : ""}</span>}
+          {apisFound > 0     && <span className="text-emerald-400">🌐 API</span>}
+          {documentsFound === 0 && imagesFound === 0 && apisFound === 0 && <span>None</span>}
         </div>
         {executionTime && (
           <span className="text-xs text-gray-500 ml-auto">
@@ -143,7 +165,6 @@ function StructuredResponseRenderer({ structured, executionTime }: { structured:
         )}
       </div>
 
-      {/* Citation mapping */}
       {citations.length > 0 && (
         <div className="bg-[#1a2535] border border-[#2a3749] rounded-xl p-3 space-y-1.5">
           <div className="flex items-center gap-1.5 text-xs text-gray-400 font-semibold mb-2">
@@ -170,14 +191,14 @@ export default function ChatPage() {
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [conversationContext, setConversationContext] = useState<string>("");
+  // IDs of files uploaded in the CURRENT session (cleared after each send)
+  const [sessionDocIds, setSessionDocIds] = useState<string[]>([]);
+  const [sessionImgIds, setSessionImgIds] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
 
-  const { data: history } = useQuery<SearchHistory[]>({
-    queryKey: ["/api/search/history"],
-  });
+  useQuery<SearchHistory[]>({ queryKey: ["/api/search/history"] });
 
   useEffect(() => {
     const handleNewChat = () => {
@@ -185,16 +206,16 @@ export default function ChatPage() {
       setQuery("");
       setAttachments([]);
       setConversationContext("");
+      setSessionDocIds([]);
+      setSessionImgIds([]);
       initialized.current = true;
     };
-
     window.addEventListener("newChat", handleNewChat);
     return () => window.removeEventListener("newChat", handleNewChat);
   }, []);
 
   useEffect(() => {
     if (initialized.current) return;
-
     const activeConversation = localStorage.getItem("activeConversation");
     if (activeConversation) {
       try {
@@ -203,16 +224,19 @@ export default function ChatPage() {
         const loadedMessages: Message[] = [
           {
             id: `user-${conversationData.id}`,
-            type: "user" as const,
+            type: "user",
             content: conversationData.query,
             timestamp: new Date(conversationData.createdAt),
           },
           {
             id: `assistant-${conversationData.id}`,
-            type: "assistant" as const,
+            type: "assistant",
             content: results?.answer || "No response available",
             structured: results?.structured,
-            results: results,
+            documentsFound: results?.documents_found ?? 0,
+            imagesFound: results?.images_found ?? 0,
+            apisFound: (results?.apiResults ?? []).length,
+            results,
             executionTime: conversationData.executionTime,
             timestamp: new Date(conversationData.createdAt),
           },
@@ -231,7 +255,8 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const uploadFile = async (file: File) => {
+  // Upload a file; returns the assigned DB id
+  const uploadFile = async (file: File): Promise<{ type: "pdf" | "image"; name: string; id: string }> => {
     const formData = new FormData();
     formData.append("file", file);
 
@@ -250,17 +275,28 @@ export default function ChatPage() {
       throw new Error(err.message || "Upload failed");
     }
 
-    return response.json();
+    const data = await response.json();
+    // Backend returns { document: {...} } for PDFs, { image: {...} } for images
+    const id: string = data.document?.id ?? data.image?.id ?? "";
+    return { type: isPDF ? "pdf" : "image", name: file.name, id };
   };
 
   const searchMutation = useMutation({
-    mutationFn: async (searchQuery: string) => {
+    mutationFn: async ({
+      searchQuery,
+      docIds,
+      imgIds,
+    }: {
+      searchQuery: string;
+      docIds: string[];
+      imgIds: string[];
+    }) => {
       const fullQuery = conversationContext
-        ? `Follow-up question (previous context: ${conversationContext.slice(0, 300)}): ${searchQuery}`
+        ? `Follow-up (context: ${conversationContext.slice(0, 300)}): ${searchQuery}`
         : searchQuery;
       return apiRequest("/api/search/query", {
         method: "POST",
-        body: JSON.stringify({ query: fullQuery }),
+        body: JSON.stringify({ query: fullQuery, documentIds: docIds, imageIds: imgIds }),
       });
     },
     onSuccess: (data) => {
@@ -271,30 +307,27 @@ export default function ChatPage() {
         type: "assistant",
         content: data.answer || "I found some results for your query.",
         structured: data.structured,
+        documentsFound: data.documents_found ?? 0,
+        imagesFound: data.images_found ?? 0,
+        apisFound: (data.apiResults ?? []).length,
         results: data,
         executionTime: data.executionTime,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, assistantMessage]);
-
-      setConversationContext((prev) =>
-        (prev + " " + data.answer).slice(-1000)
-      );
+      setConversationContext((prev) => (prev + " " + data.answer).slice(-1000));
     },
     onError: (error: any) => {
-      toast({
-        title: "Search Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-
-      const errorMessage: Message = {
-        id: `error-${Date.now()}`,
-        type: "assistant",
-        content: `Sorry, I encountered an error: ${error.message}`,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      toast({ title: "Search Failed", description: error.message, variant: "destructive" });
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `error-${Date.now()}`,
+          type: "assistant",
+          content: `Sorry, I encountered an error: ${error.message}`,
+          timestamp: new Date(),
+        },
+      ]);
     },
   });
 
@@ -302,25 +335,25 @@ export default function ChatPage() {
     e.preventDefault();
     if (!query.trim() && attachments.length === 0) return;
 
-    const uploadedAttachments: { type: "pdf" | "image"; name: string; id?: string }[] = [];
+    const newDocIds: string[] = [];
+    const newImgIds: string[] = [];
+    const uploadedAttachments: { type: "pdf" | "image"; name: string }[] = [];
 
     if (attachments.length > 0) {
       setIsUploading(true);
       try {
         for (const file of attachments) {
           const result = await uploadFile(file);
-          uploadedAttachments.push({
-            type: file.type === "application/pdf" ? "pdf" : "image",
-            name: file.name,
-            id: result.id,
-          });
+          uploadedAttachments.push({ type: result.type, name: result.name });
+          if (result.type === "pdf" && result.id) newDocIds.push(result.id);
+          else if (result.type === "image" && result.id) newImgIds.push(result.id);
         }
-        queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/images"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/documents/list"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/images/list"] });
       } catch (error: any) {
         toast({
           title: "Upload Failed",
-          description: error.message || "Failed to upload attachments",
+          description: error.message || "Failed to upload one or more files",
           variant: "destructive",
         });
         setIsUploading(false);
@@ -329,6 +362,12 @@ export default function ChatPage() {
       setIsUploading(false);
     }
 
+    // Accumulate IDs for follow-up queries in the same conversation
+    const allDocIds = [...sessionDocIds, ...newDocIds];
+    const allImgIds = [...sessionImgIds, ...newImgIds];
+    setSessionDocIds(allDocIds);
+    setSessionImgIds(allImgIds);
+
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       type: "user",
@@ -336,32 +375,31 @@ export default function ChatPage() {
       attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
       timestamp: new Date(),
     };
-
     setMessages((prev) => [...prev, userMessage]);
     setQuery("");
     setAttachments([]);
 
     if (query.trim()) {
-      searchMutation.mutate(query);
+      searchMutation.mutate({ searchQuery: query, docIds: allDocIds, imgIds: allImgIds });
     } else if (uploadedAttachments.length > 0) {
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        type: "assistant",
-        content: `Successfully uploaded ${uploadedAttachments.length} file(s). You can now ask questions about these documents and I'll include their content in my grounded analysis.`,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          type: "assistant",
+          content: `Successfully uploaded ${uploadedAttachments.length} file(s). Ask a question to analyse them — I'll cite only these sources.`,
+          timestamp: new Date(),
+        },
+      ]);
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const validFiles = files.filter((file) => {
-      const isPDF = file.type === "application/pdf";
-      const isImage = file.type.startsWith("image/");
-      return isPDF || isImage;
-    });
-    setAttachments((prev) => [...prev, ...validFiles]);
+    const valid = files.filter(f => f.type === "application/pdf" || f.type.startsWith("image/"));
+    setAttachments((prev) => [...prev, ...valid]);
+    // reset the input so the same file can be re-selected
+    e.target.value = "";
   };
 
   const removeAttachment = (index: number) => {
@@ -371,7 +409,6 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] md:h-[calc(100vh-80px)] max-w-4xl mx-auto pb-16 md:pb-0">
       <div
-        ref={chatContainerRef}
         className="flex-1 overflow-y-auto scrollbar-hide px-2 md:px-4 py-4 md:py-6 space-y-4 md:space-y-6"
       >
         {messages.length === 0 && (
@@ -404,9 +441,7 @@ export default function ChatPage() {
           >
             <div
               className={`max-w-[90%] rounded-2xl px-5 py-4 ${
-                message.type === "user"
-                  ? "bg-emerald-500 text-white"
-                  : "bg-[#2a3749] text-white"
+                message.type === "user" ? "bg-emerald-500 text-white" : "bg-[#2a3749] text-white"
               }`}
               data-testid={`message-${message.type}-${message.id}`}
             >
@@ -417,11 +452,9 @@ export default function ChatPage() {
                       key={idx}
                       className="flex items-center gap-1 bg-white/20 rounded px-2 py-1 text-xs"
                     >
-                      {att.type === "pdf" ? (
-                        <FileText className="w-3 h-3" />
-                      ) : (
-                        <Image className="w-3 h-3" />
-                      )}
+                      {att.type === "pdf"
+                        ? <FileText className="w-3 h-3" />
+                        : <Image className="w-3 h-3" />}
                       {att.name}
                     </div>
                   ))}
@@ -430,15 +463,16 @@ export default function ChatPage() {
 
               <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
 
-              {/* Enterprise structured response */}
               {message.type === "assistant" && message.structured && (
                 <StructuredResponseRenderer
                   structured={message.structured}
+                  documentsFound={message.documentsFound ?? 0}
+                  imagesFound={message.imagesFound ?? 0}
+                  apisFound={message.apisFound ?? 0}
                   executionTime={message.executionTime}
                 />
               )}
 
-              {/* Fallback timing for non-structured responses */}
               {message.type === "assistant" && !message.structured && message.executionTime && (
                 <p className="text-xs text-gray-400 mt-3">
                   Searched in {(message.executionTime / 1000).toFixed(2)}s
@@ -468,11 +502,9 @@ export default function ChatPage() {
                 key={idx}
                 className="flex items-center gap-2 bg-[#2a3749] rounded-lg px-3 py-2 text-sm text-white"
               >
-                {file.type === "application/pdf" ? (
-                  <FileText className="w-4 h-4 text-blue-400" />
-                ) : (
-                  <Image className="w-4 h-4 text-purple-400" />
-                )}
+                {file.type === "application/pdf"
+                  ? <FileText className="w-4 h-4 text-blue-400" />
+                  : <Image className="w-4 h-4 text-purple-400" />}
                 <span className="max-w-[150px] truncate">{file.name}</span>
                 <button
                   onClick={() => removeAttachment(idx)}
@@ -490,7 +522,7 @@ export default function ChatPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,image/*"
+            accept=".pdf,image/jpeg,image/jpg,image/png"
             multiple
             onChange={handleFileSelect}
             className="hidden"
@@ -521,7 +553,11 @@ export default function ChatPage() {
             type="submit"
             size="icon"
             className="bg-emerald-500 hover:bg-emerald-600 h-12 w-12"
-            disabled={searchMutation.isPending || isUploading || (!query.trim() && attachments.length === 0)}
+            disabled={
+              searchMutation.isPending ||
+              isUploading ||
+              (!query.trim() && attachments.length === 0)
+            }
             data-testid="button-send-message"
           >
             {isUploading ? (
