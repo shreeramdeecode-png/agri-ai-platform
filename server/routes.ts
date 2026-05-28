@@ -179,12 +179,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Only fetch market/food-security data when the user explicitly asks for it:
-      // must have a price/food_security intent AND name a crop or country.
-      // Generic questions (irrigation, weather, general advice) do NOT trigger the API.
+      // Only fetch market data when ALL THREE conditions are true:
+      // 1. Gemini classified intent as price or food_security
+      // 2. A specific crop or country was named
+      // 3. The raw query actually contains a price/market keyword (failsafe against mis-classification)
+      const PRICE_KEYWORDS = /\b(price|cost|cost|rate|market|how much|ksh|usd|per kg|per ton|afford|cheap|expensive|value|worth)\b/i;
       const needsMarketData =
         (extractedParams.intent === "price" || extractedParams.intent === "food_security") &&
-        (extractedParams.crop != null || extractedParams.country != null);
+        (extractedParams.crop != null || extractedParams.country != null) &&
+        PRICE_KEYWORDS.test(query);
 
       // Fetch documents/images always; market API only when relevant
       const [userDocuments, userImages] = await Promise.all([
