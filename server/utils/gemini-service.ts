@@ -118,34 +118,40 @@ export async function searchInDocuments(query: string, documents: Document[]): P
 
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", safetySettings });
 
-  const documentContext = documents
-    .map((doc) => `=== Document: ${doc.filename} ===\n${doc.extractedText?.substring(0, 4000) || "(empty)"}`)
-    .join("\n\n");
+  // Process each document separately so each result is clearly tagged with its filename.
+  // This prevents source attribution from being lost when results are passed downstream.
+  const results: string[] = [];
 
-  const prompt = `You are a document analysis assistant for an agriculture intelligence platform.
-The user has uploaded the following documents. Carefully read them and answer the query below.
+  for (const doc of documents) {
+    if (!doc.extractedText || doc.extractedText.trim().length === 0) continue;
 
-TASK:
-- Find all relevant information from these documents that answers the user's query
-- Quote or paraphrase specific data points, statistics, or conclusions from the documents
-- If a document is not relevant, skip it
-- If no document contains relevant information, respond with exactly: "No relevant information found in uploaded documents."
+    const prompt = `You are a document analysis assistant. Read the document below and extract content relevant to the query.
 
 QUERY: ${query}
 
-DOCUMENTS:
-${documentContext}
+DOCUMENT FILENAME: ${doc.filename}
+DOCUMENT CONTENT:
+${doc.extractedText.substring(0, 5000)}
 
-Provide a thorough, structured answer citing which document each piece of information comes from.`;
+TASK:
+- If this document contains relevant information for the query, extract and summarize it precisely.
+- Include specific numbers, ratios, names, dates exactly as they appear.
+- If this document does NOT contain relevant information for this query, respond with exactly: NO_RELEVANT_CONTENT
+- Do NOT add any prefix like "According to..." — just return the raw extracted content.`;
 
-  try {
-    const result = await withTimeout(model.generateContent(prompt), 30000, "Document search");
-    const text = result.response.text();
-    return text.split("\n").filter((line) => line.trim().length > 0);
-  } catch (error: any) {
-    console.error("Document search error:", error.message);
-    return [];
+    try {
+      const result = await withTimeout(model.generateContent(prompt), 25000, "Document search");
+      const text = result.response.text().trim();
+      if (text && text !== "NO_RELEVANT_CONTENT" && !text.includes("NO_RELEVANT_CONTENT")) {
+        // Tag each result with its source filename so it is never lost downstream
+        results.push(`[SOURCE_DOCUMENT: ${doc.filename}]\n${text}`);
+      }
+    } catch (error: any) {
+      console.error(`Document search error for ${doc.filename}:`, error.message);
+    }
   }
+
+  return results;
 }
 
 export async function analyzePdfDocument(pdfText: string, filename: string): Promise<string> {
@@ -261,43 +267,61 @@ export async function generateAgricultureResponse(
 ): Promise<string> {
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", safetySettings });
 
-  const context = {
-    apiResults: apiData.length > 0 ? JSON.stringify(apiData, null, 2) : "No live API data available",
-    pdfResults: pdfData.length > 0 ? pdfData.join("\n") : "No document data available",
-    imageResults: imageData.length > 0 ? imageData.join("\n") : "No image data available",
-  };
+  // Parse tagged document results — each entry is "[SOURCE_DOCUMENT: filename]\ncontent"
+  const documentSections = pdfData
+    .map((entry) => {
+      const match = entry.match(/^\[SOURCE_DOCUMENT: (.+?)\]\n([\s\S]+)$/);
+      if (match) return { filename: match[1], content: match[2] };
+      return { filename: "uploaded document", content: entry };
+    });
 
-  const prompt = `You are AgriSearch AI, an expert agriculture intelligence assistant powered by real-time data.
+  const hasDocumentData = documentSections.length > 0;
+
+  const formattedDocuments = hasDocumentData
+    ? documentSections
+        .map((d) => `--- From: ${d.filename} ---\n${d.content}`)
+        .join("\n\n")
+    : "No relevant content found in uploaded documents.";
+
+  const formattedImages = imageData.length > 0
+    ? imageData.join("\n\n")
+    : "No image data available.";
+
+  const formattedApi = apiData.length > 0
+    ? JSON.stringify(apiData, null, 2)
+    : "No live market data available.";
+
+  const prompt = `You are AgriSearch AI, an expert agriculture intelligence assistant.
 
 USER QUERY: ${query}
 
-EXTRACTED PARAMETERS:
-- Crop/Commodity: ${params.crop || "Not specified"}
-- Country/Region: ${params.country || "Not specified"} ${params.region ? `/ ${params.region}` : ""}
-- Date Range: ${params.dateRange ? `${params.dateRange.start || "N/A"} to ${params.dateRange.end || "N/A"}` : "Most recent available"}
-- Intent: ${params.intent}
+═══════════════════════════════════════
+📄 UPLOADED DOCUMENT CONTENT (PRIMARY SOURCE — highest priority)
+${formattedDocuments}
+═══════════════════════════════════════
+📊 LIVE MARKET API DATA
+${formattedApi}
+═══════════════════════════════════════
+🖼️ IMAGE DATA (supplementary only)
+${formattedImages}
+═══════════════════════════════════════
 
-DATA SOURCES (use in this priority order):
+STRICT ATTRIBUTION RULES:
+${hasDocumentData
+  ? `- Uploaded documents CONTAIN relevant content. Base your answer primarily on the document(s) above.
+- In your source line, write exactly: "Source: [filename]" using the exact filename shown after "From:".
+- Do NOT say "Image Data" or "Image Source" if the document answered the question.
+- Only mention image data if it adds something the document does not cover.`
+  : `- No relevant document content found. Use image data or general knowledge.
+- Cite image data if used. Clearly state if answering from general knowledge.`}
+- Only mention market API data if the user asked about prices, costs, or food security.
 
-📄 Uploaded Document Content (HIGHEST PRIORITY — always use this first if relevant):
-${context.pdfResults}
+RESPONSE FORMAT:
+1. Direct answer with specific facts, numbers, and recommendations from the source
+2. Use bullet points or sections for clarity
+3. End with a single "**Source:**" line naming the exact document filename or data source used
 
-📊 Live Market API Data (use only when the user asks about prices, market rates, or food security):
-${context.apiResults}
-
-🖼️ Image Data (use only as a supplement when documents do not cover the topic):
-${context.imageResults}
-
-INSTRUCTIONS:
-1. PRIORITY RULE: If the uploaded document content answers the query, base your response on that. Cite it as "According to [exact filename]..." Do NOT default to image data when document content is available.
-2. Only reference image data if the documents do NOT contain relevant information about the specific question.
-3. Only reference live API data if the user asked about market prices, costs, or food security.
-4. If answering from the document, mention the document's filename explicitly in the source attribution.
-5. Include specific numbers, statistics, or recommendations exactly as they appear in the source.
-6. Use clear formatting with bullet points or sections when appropriate.
-7. Be direct — avoid filler phrases like "based on available data" when you have a specific source.
-
-Provide a thorough, well-structured response:`;
+Answer:`;
 
   const result = await withTimeout(model.generateContent(prompt), 30000, "Response generation");
   return result.response.text();
