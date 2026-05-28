@@ -234,18 +234,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         "Response generation"
       );
 
+      // If pdfResults exist but Gemini forgot to include a Source line, append it
+      // so the citation is always present in the answer text.
+      let finalAnswer = answer;
+      if (pdfResults.length > 0 && !answer.includes("**Source:**")) {
+        const filenames = pdfResults
+          .map((r) => r.match(/^\[SOURCE_DOCUMENT: (.+?)\]/)?.[1])
+          .filter(Boolean);
+        if (filenames.length > 0) {
+          finalAnswer = answer + `\n\n**Source:** ${filenames[0]}`;
+        }
+      }
+
       let sourceType = "";
       if (apiResults.length > 0) sourceType += "API";
       if (pdfResults.length > 0) sourceType += sourceType ? "+PDF" : "PDF";
-      if (imageResults.length > 0) sourceType += sourceType ? "+Image" : "Image";
+      // Only mark Image in sourceType when images were actually used by the AI
+      if (imageResultsForAI.length > 0) sourceType += sourceType ? "+Image" : "Image";
       if (!sourceType) sourceType = "None";
 
       const responsePayload = {
         cacheVersion: CACHE_VERSION,
-        answer,
+        answer: finalAnswer,
         apiResults: apiResults.map((r) => ({ source: r.source, data: r.data })),
         pdfResults,
-        imageResults,
+        // Send only the images actually used by the AI — this drives the
+        // "Image Analysis" UI card, so it should be empty when PDF answered.
+        imageResults: imageResultsForAI,
       };
 
       // Save to history

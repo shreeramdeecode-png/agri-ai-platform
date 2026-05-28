@@ -291,6 +291,9 @@ export async function generateAgricultureResponse(
     ? JSON.stringify(apiData, null, 2)
     : "No live market data available.";
 
+  // Build the exact filename list for injection into the prompt
+  const documentFilenames = documentSections.map((d) => d.filename);
+
   const prompt = `You are AgriSearch AI, an expert agriculture intelligence assistant.
 
 USER QUERY: ${query}
@@ -302,24 +305,27 @@ ${formattedDocuments}
 📊 LIVE MARKET API DATA
 ${formattedApi}
 ═══════════════════════════════════════
-🖼️ IMAGE DATA (supplementary only)
+🖼️ IMAGE DATA
 ${formattedImages}
 ═══════════════════════════════════════
 
-STRICT ATTRIBUTION RULES:
-${hasDocumentData
-  ? `- Uploaded documents CONTAIN relevant content. Base your answer primarily on the document(s) above.
-- In your source line, write exactly: "Source: [filename]" using the exact filename shown after "From:".
-- Do NOT say "Image Data" or "Image Source" if the document answered the question.
-- Only mention image data if it adds something the document does not cover.`
-  : `- No relevant document content found. Use image data or general knowledge.
-- Cite image data if used. Clearly state if answering from general knowledge.`}
-- Only mention market API data if the user asked about prices, costs, or food security.
-
+${hasDocumentData ? `
+▶ DOCUMENT MODE — The uploaded document(s) contain the answer.
+  • Answer using ONLY the document content above.
+  • Do NOT invent information not present in the document.
+  • Do NOT reference "Image Data" or "image" as a source — images are not available.
+  • The LAST line of your response MUST be exactly (no other wording):
+    **Source:** ${documentFilenames[0]}
+` : `
+▶ KNOWLEDGE MODE — No relevant document content was found.
+  • Answer from the image data or your general agriculture knowledge.
+  • If using image data, say "Source: Image Data".
+  • If using general knowledge, say "Source: General Knowledge".
+`}
 RESPONSE FORMAT:
-1. Direct answer with specific facts, numbers, and recommendations from the source
-2. Use bullet points or sections for clarity
-3. End with a single "**Source:**" line naming the exact document filename or data source used
+1. Answer the question directly with specific facts and numbers from the source
+2. Use bullet points or numbered sections for clarity
+3. Final line MUST be the **Source:** line as specified above — nothing after it
 
 Answer:`;
 

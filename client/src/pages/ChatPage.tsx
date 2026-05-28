@@ -263,6 +263,7 @@ export default function ChatPage() {
     // AND named a specific crop or country. Queries about cultivation, irrigation,
     // fertilizer ratios, etc. must never show a market data card.
     const requestedCrop = results.extractedParams?.crop;
+    const requestedCountry = results.extractedParams?.country;
     const requestedIntent = results.extractedParams?.intent;
     const isMarketIntent =
       requestedIntent === "price" || requestedIntent === "food_security";
@@ -270,7 +271,7 @@ export default function ChatPage() {
     const hasRealData =
       priceData &&
       priceData.data?.currentPrice &&
-      requestedCrop != null &&
+      (requestedCrop != null || requestedCountry != null) &&
       isMarketIntent;
 
     if (!hasRealData && pdfResults.length === 0 && imageResults.length === 0) return null;
