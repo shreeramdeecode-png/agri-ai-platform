@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { ExtractedParams } from "./gemini-service";
+import type { ExtractedParams } from "./openai-service";
 
 export interface ExternalApiResult {
   source: string;

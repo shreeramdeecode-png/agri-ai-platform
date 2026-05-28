@@ -41,13 +41,14 @@ export const upload = multer({
 });
 
 export async function extractPdfText(filePath: string): Promise<string> {
-  const dataBuffer = await fs.readFile(filePath);
-  const data = await pdfParse(dataBuffer);
-  const text = (data.text || "").trim();
-  if (!text) {
-    throw Object.assign(new Error("No extractable text found in this PDF. Scanned/image-only PDFs are not supported."), { statusCode: 400, code: "PDF_NO_TEXT" });
+  try {
+    const dataBuffer = await fs.readFile(filePath);
+    const data = await pdfParse(dataBuffer);
+    return data.text;
+  } catch (error) {
+    console.error("Error extracting PDF text:", error);
+    return "";
   }
-  return text;
 }
 
 export async function deleteFile(filePath: string): Promise<void> {

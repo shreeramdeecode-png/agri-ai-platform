@@ -12,7 +12,7 @@ export default function AdminSettings() {
   const { toast } = useToast();
   const { data: settings } = useQuery({ queryKey: ["/api/admin/settings"] });
   
-  const [geminiKey, setGeminiKey] = useState("");
+  const [openaiKey, setOpenaiKey] = useState("");
   const [fewsnetKey, setFewsnetKey] = useState("");
   const [otherApis, setOtherApis] = useState("");
   const [retryLimits, setRetryLimits] = useState("3");
@@ -33,9 +33,9 @@ export default function AdminSettings() {
     },
   });
 
-  const handleUpdateGemini = () => {
-    if (geminiKey) {
-      updateSettingMutation.mutate({ keyName: "GEMINI_API_KEY", keyValue: geminiKey, isActive: true });
+  const handleUpdateOpenAI = () => {
+    if (openaiKey) {
+      updateSettingMutation.mutate({ keyName: "OPENAI_API_KEY", keyValue: openaiKey, isActive: true });
     }
   };
 
@@ -79,24 +79,23 @@ export default function AdminSettings() {
           <p className="text-sm text-gray-400">Manage your API keys and external integrations</p>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Gemini API Key */}
+          {/* OpenAI API Key */}
           <div className="space-y-2">
-            <Label htmlFor="gemini-key" className="text-gray-300">Gemini API Key</Label>
-            <p className="text-xs text-gray-500">Runtime key is loaded from Replit Secrets (GEMINI_API_KEY). Use this field to store a reference only.</p>
+            <Label htmlFor="openai-key" className="text-gray-300">OpenAI API Key</Label>
             <div className="flex gap-3">
               <Input
-                id="gemini-key"
+                id="openai-key"
                 type="password"
-                value={geminiKey}
-                onChange={(e) => setGeminiKey(e.target.value)}
-                placeholder="AIza••••••••••••••••••••••••••••••••••••••"
+                value={openaiKey}
+                onChange={(e) => setOpenaiKey(e.target.value)}
+                placeholder="sk-proj-••••••••••••••••••••••••••••••••••••••"
                 className="flex-1 bg-[#424769] border-[#424769] text-white placeholder:text-gray-500"
-                data-testid="input-gemini-key"
+                data-testid="input-openai-key"
               />
               <Button
-                onClick={handleUpdateGemini}
+                onClick={handleUpdateOpenAI}
                 className="bg-gradient-to-r from-[#14b8a6] to-[#0d9488] hover:opacity-90 text-white"
-                data-testid="button-update-gemini"
+                data-testid="button-update-openai"
               >
                 Update
               </Button>
