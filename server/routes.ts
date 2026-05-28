@@ -3,12 +3,15 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { generateToken, comparePassword, authMiddleware, adminMiddleware } from "./utils/auth";
 import { upload, extractPdfText, deleteFile } from "./utils/file-processor";
-import { 
-  extractQueryIntent, 
-  classifyDomain, 
+import {
+  extractQueryIntent,
+  classifyDomain,
   searchInDocuments,
   analyzeImage,
-  generateAgricultureResponse 
+  generateAgricultureResponse,
+  analyzePdfDocument,
+  askAboutDocument,
+  withTimeout,
 } from "./utils/openai-service";
 import { fetchAgricultureData } from "./utils/external-apis";
 import { insertUserSchema, insertSearchHistorySchema, insertApiSettingSchema } from "@shared/schema";
@@ -20,12 +23,12 @@ interface MulterRequest extends Request {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  
+
   // Auth routes
   app.post("/api/auth/signup", async (req, res) => {
     try {
       const userData = insertUserSchema.parse(req.body);
-      
+
       const existingUser = await storage.getUserByEmail(userData.email);
       if (existingUser) {
         return res.status(400).json({ message: "Email already registered" });
@@ -95,7 +98,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = (req as any).user.userId;
       const user = await storage.getUser(userId);
-      
+
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
@@ -116,7 +119,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = (req as any).user.userId;
       const { fullName, password } = req.body;
-      
+
       const updates: any = {};
       if (fullName) updates.fullName = fullName;
       if (password) updates.password = password;
@@ -133,78 +136,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = (req as any).user.userId;
       const { query } = req.body;
+
+      if (!query || !query.trim()) {
+        return res.status(400).json({ message: "Query is required" });
+      }
+
       const startTime = Date.now();
 
-      // Step 1: Extract intent and classify domain
-      const [extractedParams, domain] = await Promise.all([
-        extractQueryIntent(query),
-        classifyDomain(query)
-      ]);
-
-      if (domain !== "agriculture") {
-        return res.status(400).json({ 
-          message: "Currently only agriculture domain queries are supported" 
+      // Check cache first — same query by this user in the last 24 hours
+      const cached = await storage.findCachedSearch(userId, query);
+      if (cached && cached.results) {
+        const cachedResults = cached.results as any;
+        return res.json({
+          ...(typeof cachedResults === "object" ? cachedResults : {}),
+          answer: cachedResults.answer,
+          sourceType: cached.sourceType,
+          extractedParams: cached.extractedParams,
+          executionTime: cached.executionTime,
+          cached: true,
+          cachedAt: cached.createdAt,
         });
       }
 
-      // Step 2: Fetch data from multiple sources
-      const [apiResults, userDocuments, userImages] = await Promise.all([
-        fetchAgricultureData(extractedParams),
-        storage.getUserDocuments(userId),
-        storage.getUserImages(userId)
+      // Extract intent and classify domain in parallel
+      const [extractedParams, domain] = await Promise.all([
+        extractQueryIntent(query),
+        classifyDomain(query),
       ]);
 
-      // Step 3: Search in PDFs
-      const pdfResults = await searchInDocuments(query, userDocuments);
-
-      // Step 4: Analyze images (if any)
-      const imageResults: string[] = [];
-      for (const image of userImages.slice(0, 3)) {
-        if (image.extractedData) {
-          imageResults.push(image.extractedData);
-        }
+      if (domain !== "agriculture") {
+        return res.status(400).json({
+          message: "Currently only agriculture domain queries are supported. Please ask about crops, food prices, food security, or related topics.",
+        });
       }
 
-      // Step 5: Generate comprehensive response
-      const answer = await generateAgricultureResponse(
-        query,
-        extractedParams,
-        apiResults.map(r => r.data),
-        pdfResults,
-        imageResults
+      // Fetch data from all sources in parallel, with timeout protection
+      const [apiResults, userDocuments, userImages] = await Promise.all([
+        withTimeout(fetchAgricultureData(extractedParams), 50000, "Agriculture API fetch"),
+        storage.getUserDocuments(userId),
+        storage.getUserImages(userId),
+      ]);
+
+      // Search in uploaded PDFs
+      const pdfResults = userDocuments.length > 0
+        ? await withTimeout(searchInDocuments(query, userDocuments), 30000, "Document search")
+        : [];
+
+      // Use already-analyzed image data
+      const imageResults: string[] = userImages
+        .slice(0, 3)
+        .filter((img) => img.extractedData)
+        .map((img) => img.extractedData as string);
+
+      // Generate comprehensive AI response
+      const answer = await withTimeout(
+        generateAgricultureResponse(query, extractedParams, apiResults.map((r) => r.data), pdfResults, imageResults),
+        35000,
+        "Response generation"
       );
 
-      // Determine source type
       let sourceType = "";
       if (apiResults.length > 0) sourceType += "API";
-      if (pdfResults.length > 0) sourceType += (sourceType ? "+PDF" : "PDF");
-      if (imageResults.length > 0) sourceType += (sourceType ? "+Image" : "Image");
+      if (pdfResults.length > 0) sourceType += sourceType ? "+PDF" : "PDF";
+      if (imageResults.length > 0) sourceType += sourceType ? "+Image" : "Image";
       if (!sourceType) sourceType = "None";
 
+      const responsePayload = {
+        answer,
+        apiResults: apiResults.map((r) => ({ source: r.source, data: r.data })),
+        pdfResults,
+        imageResults,
+      };
+
       // Save to history
-      const history = await storage.createSearchHistory(
+      await storage.createSearchHistory(
         insertSearchHistorySchema.parse({
           userId,
           query,
           extractedParams,
           sourceType,
-          results: { answer, apiResults, pdfResults, imageResults },
+          results: responsePayload,
           agentUsed: "Agriculture",
           executionTime: Date.now() - startTime,
         })
       );
 
       res.json({
-        answer,
+        ...responsePayload,
         sourceType,
         extractedParams,
-        apiResults: apiResults.map(r => ({ source: r.source, data: r.data })),
-        pdfResults,
-        imageResults,
         executionTime: Date.now() - startTime,
+        cached: false,
       });
     } catch (error: any) {
-      res.status(500).json({ message: error.message || "Search failed" });
+      console.error("Search error:", error.message);
+      const isTimeout = error.message?.includes("timed out");
+      res.status(isTimeout ? 504 : 500).json({
+        message: isTimeout
+          ? error.message
+          : `Search failed: ${error.message || "An unexpected error occurred"}`,
+      });
     }
   });
 
@@ -234,8 +265,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
+      if (req.file.mimetype !== "application/pdf") {
+        await deleteFile(req.file.path);
+        return res.status(400).json({ message: "Only PDF files are supported for document upload" });
+      }
+
       const userId = (req as any).user.userId;
       const extractedText = await extractPdfText(req.file.path);
+
+      if (!extractedText || extractedText.trim().length < 10) {
+        return res.status(400).json({
+          message: "Could not extract text from this PDF. The file may be scanned or image-based.",
+        });
+      }
+
+      // Generate AI summary of the document
+      const summary = await withTimeout(
+        analyzePdfDocument(extractedText, req.file.originalname),
+        35000,
+        "PDF analysis"
+      );
 
       const document = await storage.createDocument({
         userId,
@@ -245,9 +294,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fileSize: req.file.size,
       });
 
-      res.json({ message: "Document uploaded successfully", document });
+      res.json({
+        message: "Document uploaded and analyzed successfully",
+        document,
+        summary,
+      });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      console.error("Document upload error:", error.message);
+      if (req.file?.path) {
+        await deleteFile(req.file.path).catch(() => {});
+      }
+      const isTimeout = error.message?.includes("timed out");
+      res.status(isTimeout ? 504 : 500).json({
+        message: isTimeout ? error.message : `Upload failed: ${error.message}`,
+      });
+    }
+  });
+
+  // Ask a question about a specific document
+  app.post("/api/documents/:id/ask", authMiddleware, async (req, res) => {
+    try {
+      const userId = (req as any).user.userId;
+      const { question } = req.body;
+
+      if (!question || !question.trim()) {
+        return res.status(400).json({ message: "Question is required" });
+      }
+
+      const doc = await storage.getDocument(req.params.id);
+      if (!doc) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      if (doc.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (!doc.extractedText) {
+        return res.status(400).json({ message: "No text content available in this document" });
+      }
+
+      const answer = await withTimeout(
+        askAboutDocument(doc.extractedText, doc.filename, question),
+        30000,
+        "Document Q&A"
+      );
+
+      res.json({ answer, documentName: doc.filename });
+    } catch (error: any) {
+      console.error("Document ask error:", error.message);
+      const isTimeout = error.message?.includes("timed out");
+      res.status(isTimeout ? 504 : 500).json({
+        message: isTimeout ? error.message : `Failed to process question: ${error.message}`,
+      });
     }
   });
 
@@ -282,13 +381,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const userId = (req as any).user.userId;
-      
-      // Create base64 data URL for OpenAI
+
       const imageBuffer = await fs.readFile(req.file.path);
       const base64Image = imageBuffer.toString("base64");
       const dataUrl = `data:${req.file.mimetype};base64,${base64Image}`;
-      
-      const extractedData = await analyzeImage(dataUrl);
+
+      const extractedData = await withTimeout(
+        analyzeImage(dataUrl),
+        30000,
+        "Image analysis"
+      );
 
       const image = await storage.createImage({
         userId,
@@ -298,9 +400,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fileSize: req.file.size,
       });
 
-      res.json({ message: "Image uploaded successfully", image });
+      res.json({ message: "Image uploaded and analyzed successfully", image, analysis: extractedData });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      console.error("Image upload error:", error.message);
+      if (req.file?.path) {
+        await deleteFile(req.file.path).catch(() => {});
+      }
+      const isTimeout = error.message?.includes("timed out");
+      res.status(isTimeout ? 504 : 500).json({
+        message: isTimeout ? error.message : `Image upload failed: ${error.message}`,
+      });
     }
   });
 
@@ -349,14 +458,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/users", authMiddleware, adminMiddleware, async (req, res) => {
     try {
       const users = await storage.getAllUsers();
-      res.json(users.map(u => ({
-        id: u.id,
-        email: u.email,
-        fullName: u.fullName,
-        role: u.role,
-        isActive: u.isActive,
-        createdAt: u.createdAt,
-      })));
+      res.json(
+        users.map((u) => ({
+          id: u.id,
+          email: u.email,
+          fullName: u.fullName,
+          role: u.role,
+          isActive: u.isActive,
+          createdAt: u.createdAt,
+        }))
+      );
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -366,7 +477,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { isActive } = req.body;
       const user = await storage.updateUser(req.params.id, { isActive });
-      
+
       await storage.createAdminLog({
         adminId: (req as any).user.userId,
         action: isActive ? "activate_user" : "deactivate_user",
@@ -384,7 +495,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/admin/users/:id", authMiddleware, adminMiddleware, async (req, res) => {
     try {
       await storage.deleteUser(req.params.id);
-      
+
       await storage.createAdminLog({
         adminId: (req as any).user.userId,
         action: "delete_user",
@@ -394,6 +505,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       res.json({ message: "User deleted" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/admin/users", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const userData = insertUserSchema.parse(req.body);
+      const existingUser = await storage.getUserByEmail(userData.email);
+
+      if (existingUser) {
+        return res.status(400).json({ message: "Email already exists" });
+      }
+
+      const user = await storage.createUser(userData);
+
+      await storage.createAdminLog({
+        adminId: (req as any).user.userId,
+        action: "create_user",
+        targetEntity: "user",
+        targetId: user.id,
+        details: { email: user.email },
+      });
+
+      res.json({ message: "User created", user });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -447,10 +583,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/admin/settings", authMiddleware, adminMiddleware, async (req, res) => {
     try {
       const { keyName, keyValue, isActive } = req.body;
-      
+
       const existing = await storage.getApiSetting(keyName);
       let setting;
-      
+
       if (existing) {
         setting = await storage.updateApiSetting(keyName, { keyValue, isActive });
       } else {
@@ -501,30 +637,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create user route
-  app.post("/api/admin/users", authMiddleware, adminMiddleware, async (req, res) => {
-    try {
-      const userData = insertUserSchema.parse(req.body);
-      const existingUser = await storage.getUserByEmail(userData.email);
-      
-      if (existingUser) {
-        return res.status(400).json({ message: "Email already exists" });
-      }
-
-      const user = await storage.createUser(userData);
-      
-      await storage.createAdminLog({
-        adminId: (req as any).user.userId,
-        action: "create_user",
-        targetEntity: "user",
-        targetId: user.id,
-        details: { email: user.email },
-      });
-
-      res.json({ message: "User created", user });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
+  // Global error handler
+  app.use((err: any, _req: Request, res: any, _next: any) => {
+    console.error("Unhandled error:", err);
+    const status = err.status || err.statusCode || 500;
+    const isTimeout = err.message?.includes("timed out");
+    res.status(isTimeout ? 504 : status).json({
+      message: err.message || "Internal Server Error",
+    });
   });
 
   const httpServer = createServer(app);

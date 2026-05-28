@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/neon-serverless";
 import { Pool, neonConfig } from "@neondatabase/serverless";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import ws from "ws";
 import * as schema from "@shared/schema";
@@ -55,6 +55,7 @@ export interface IStorage {
   getUserSearchHistory(userId: string): Promise<SearchHistory[]>;
   getAllSearchHistory(): Promise<SearchHistory[]>;
   deleteSearchHistory(id: string): Promise<void>;
+  findCachedSearch(userId: string, query: string): Promise<SearchHistory | undefined>;
   
   // API Settings operations
   createApiSetting(setting: InsertApiSetting): Promise<ApiSetting>;
@@ -200,6 +201,20 @@ export class DbStorage implements IStorage {
 
   async deleteSearchHistory(id: string): Promise<void> {
     await db.delete(schema.searchHistory).where(eq(schema.searchHistory.id, id));
+  }
+
+  async findCachedSearch(userId: string, query: string): Promise<SearchHistory | undefined> {
+    const normalizedQuery = query.trim().toLowerCase();
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const results = await db.select().from(schema.searchHistory)
+      .where(and(
+        eq(schema.searchHistory.userId, userId),
+        sql`LOWER(TRIM(${schema.searchHistory.query})) = ${normalizedQuery}`,
+        sql`${schema.searchHistory.createdAt} >= ${oneDayAgo}`
+      ))
+      .orderBy(desc(schema.searchHistory.createdAt))
+      .limit(1);
+    return results[0];
   }
 
   // API Settings operations
