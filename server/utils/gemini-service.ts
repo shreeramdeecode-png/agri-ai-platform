@@ -277,24 +277,25 @@ EXTRACTED PARAMETERS:
 - Date Range: ${params.dateRange ? `${params.dateRange.start || "N/A"} to ${params.dateRange.end || "N/A"}` : "Most recent available"}
 - Intent: ${params.intent}
 
-DATA SOURCES:
-📊 Live API Data:
-${context.apiResults}
+DATA SOURCES (use in this priority order):
 
-📄 Document Data:
+📄 Uploaded Document Content (HIGHEST PRIORITY — always use this first if relevant):
 ${context.pdfResults}
 
-🖼️ Image Analysis:
+📊 Live Market API Data (use only when the user asks about prices, market rates, or food security):
+${context.apiResults}
+
+🖼️ Image Data (use only as a supplement when documents do not cover the topic):
 ${context.imageResults}
 
 INSTRUCTIONS:
-1. Synthesize all available data to give a comprehensive, accurate answer
-2. Lead with the most important/relevant information
-3. Include specific numbers, prices, dates when available from the data
-4. Clearly attribute which source each piece of information comes from (e.g., "According to HDX HAPI data...", "From your uploaded document...", "Image analysis shows...")
-5. If data is limited, acknowledge what was found and suggest what additional information might help
-6. Use clear formatting with bullet points or sections when appropriate
-7. Be direct and informative — avoid filler phrases
+1. PRIORITY RULE: If the uploaded document content answers the query, base your response on that. Cite it as "According to [exact filename]..." Do NOT default to image data when document content is available.
+2. Only reference image data if the documents do NOT contain relevant information about the specific question.
+3. Only reference live API data if the user asked about market prices, costs, or food security.
+4. If answering from the document, mention the document's filename explicitly in the source attribution.
+5. Include specific numbers, statistics, or recommendations exactly as they appear in the source.
+6. Use clear formatting with bullet points or sections when appropriate.
+7. Be direct — avoid filler phrases like "based on available data" when you have a specific source.
 
 Provide a thorough, well-structured response:`;
 

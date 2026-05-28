@@ -135,7 +135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Search routes
   // Bump this string whenever the response-shaping logic changes so that old
   // cached results are automatically ignored rather than served stale.
-  const CACHE_VERSION = "v5";
+  const CACHE_VERSION = "v6";
 
   app.post("/api/search/query", authMiddleware, async (req, res) => {
     try {
