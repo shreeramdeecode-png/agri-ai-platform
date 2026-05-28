@@ -1,0 +1,55 @@
+AI-Powered Agriculture Platform Testing
+Document
+This document contains agriculture-related knowledge, datasets, market information, weather insights, government
+schemes, irrigation methods, crop management techniques, and post-harvest practices. It is designed for testing
+AI-powered agriculture platforms with document retrieval, OCR, semantic search, and question-answering
+capabilities.
+1. Food Security in India
+India achieved a record food grain production of approximately 328 million tonnes in 2023-24. The country's food
+security has improved steadily due to increased agricultural productivity, government subsidies, better irrigation
+infrastructure, and technology adoption. Major food grains include rice, wheat, maize, and pulses.
+2. Agriculture Commodity Prices
+Commodity prices in India have shown fluctuations due to rainfall variation, export demand, fertilizer prices, and global
+market conditions. Wheat and rice prices increased moderately, while pulses experienced sharp increases because of
+supply shortages.
+3. Weather Impact on Crop Production
+Above-normal temperatures in northern India may reduce wheat yields. Timely monsoon rains are expected to
+support rice and maize production in southern and eastern agricultural regions.
+4. Fertilizer Recommendations
+Balanced fertilizer usage is important for crop productivity. Recommended NPK ratio for wheat: Nitrogen: 120 kg/ha
+Phosphorus: 60 kg/ha Potassium: 40 kg/ha Zinc Sulphate at 25 kg/ha improves grain quality and yield.
+5. Government Schemes
+Key government schemes for Indian farmers: - PM-KISAN - PMFBY (Pradhan Mantri Fasal Bima Yojana) - KCC
+(Kisan Credit Card) - e-NAM Farmers can apply online through official portals or Common Service Centres.
+6. Natural Pest Management
+Farmers can control cotton crop pests naturally using: - Neem oil sprays - Pheromone traps - Bio-pesticides -
+Trichoderma - Crop rotation techniques
+7. Irrigation Methods
+Drip irrigation and sprinkler irrigation help conserve water. These methods can save approximately 40% to 60% water
+compared to traditional flood irrigation.
+8. Agricultural Export Outlook
+India is expected to see strong export demand for: - Rice - Spices - Fruits - Marine products - Organic foods The
+export outlook for the next three years remains positive.
+9. Precision Agriculture
+Precision agriculture technologies include: - Drones - Soil sensors - AI-based crop advisory systems - IoT monitoring
+tools These technologies improve productivity and reduce operational costs.
+10. Post-Harvest Management
+Effective post-harvest practices include: - Sorting - Grading - Cold storage - Proper packaging - Timely transportation
+These methods reduce losses in fruits and vegetables.
+Market Data Table
+Commodity Location Current Price Average Price Last Updated
+Lentils India INR 140.97/KG INR 140.97/KG 15-06-2023
+Rice Tamil Nadu INR 52/KG INR 48/KG 10-05-2024
+Wheat Punjab INR 36/KG INR 34/KG 21-04-2024
+Maize Karnataka INR 29/KG INR 27/KG 18-03-2024
+Sample Questions for AI Testing
+Q1: What is the current food grain production in India?
+Q2: Which irrigation methods save the most water?
+Q3: What are the recommended fertilizers for wheat?
+Q4: Which government schemes support Indian farmers?
+Q5: How can drones improve agriculture productivity?
+Q6: Why did pulse prices increase recently?
+Q7: What are the best post-harvest management practices?
+Q8: Which crops are expected to see strong export demand?
+Q9: What technologies are used in precision agriculture?
+Q10: How does weather impact crop production?
