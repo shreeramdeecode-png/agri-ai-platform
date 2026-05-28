@@ -135,7 +135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Search routes
   // Bump this string whenever the response-shaping logic changes so that old
   // cached results are automatically ignored rather than served stale.
-  const CACHE_VERSION = "v9";
+  const CACHE_VERSION = "v10";
 
   app.post("/api/search/query", authMiddleware, async (req, res) => {
     try {
@@ -195,23 +195,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getUserImages(userId),
       ]);
 
-      const apiResults = needsMarketData
-        ? await withTimeout(fetchAgricultureData(extractedParams), 50000, "Agriculture API fetch")
-        : [];
-
-      // Search in uploaded PDFs
-      const pdfResults = userDocuments.length > 0
-        ? await withTimeout(searchInDocuments(query, userDocuments), 30000, "Document search")
-        : [];
-
-      // Filter images by relevance: only include images whose extracted content
-      // overlaps with the query keywords, so unrelated images don't pollute answers.
+      // Run API fetch + PDF search in parallel for speed
       const STOP_WORDS = new Set(["the","a","an","is","in","of","to","and","or","for","on","with","that","this","are","it","be","from","by","at","which","what","how","do","does","can","help","about","more","some","have","has"]);
       const queryKeywords = query
         .toLowerCase()
         .split(/\W+/)
         .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
 
+      const [apiResults, pdfResults] = await Promise.all([
+        needsMarketData
+          ? withTimeout(fetchAgricultureData(extractedParams), 50000, "Agriculture API fetch")
+          : Promise.resolve([]),
+        userDocuments.length > 0
+          ? withTimeout(searchInDocuments(query, userDocuments), 30000, "Document search")
+          : Promise.resolve([]),
+      ]);
+
+      // Filter images by keyword relevance
       const imageResults: string[] = userImages
         .filter((img) => {
           if (!img.extractedData) return false;
@@ -222,10 +222,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .slice(0, 3)
         .map((img) => img.extractedData as string);
 
-      // When the PDF has relevant content, do NOT pass images to the AI —
-      // otherwise Gemini may still prefer citing the image source even with
-      // prompt instructions. Documents always win when they cover the topic.
+      // Documents win: never send images to the AI when a PDF already answered.
+      // This prevents "Image Data" citations when a document is the real source.
       const imageResultsForAI = pdfResults.length > 0 ? [] : imageResults;
+      console.log(`[Search] pdfs=${pdfResults.length} images=${imageResults.length} imagesForAI=${imageResultsForAI.length} api=${apiResults.length}`);
 
       // Generate comprehensive AI response
       const answer = await withTimeout(
