@@ -171,15 +171,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Determine if this query needs external market data.
-      // Skip the API when the user is asking a general/document question (no specific
-      // crop or market intent) — avoids fetching irrelevant price data.
+      // Only fetch market/food-security data when the user explicitly asks for it:
+      // must have a price/food_security intent AND name a crop or country.
+      // Generic questions (irrigation, weather, general advice) do NOT trigger the API.
       const needsMarketData =
-        extractedParams.crop != null ||
-        extractedParams.country != null ||
-        extractedParams.intent === "price" ||
-        extractedParams.intent === "food_security" ||
-        extractedParams.intent === "production";
+        (extractedParams.intent === "price" || extractedParams.intent === "food_security") &&
+        (extractedParams.crop != null || extractedParams.country != null);
 
       // Fetch documents/images always; market API only when relevant
       const [userDocuments, userImages] = await Promise.all([
@@ -196,10 +193,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? await withTimeout(searchInDocuments(query, userDocuments), 30000, "Document search")
         : [];
 
-      // Use already-analyzed image data
+      // Filter images by relevance: only include images whose extracted content
+      // overlaps with the query keywords, so unrelated images don't pollute answers.
+      const STOP_WORDS = new Set(["the","a","an","is","in","of","to","and","or","for","on","with","that","this","are","it","be","from","by","at","which","what","how","do","does","can","help","about","more","some","have","has"]);
+      const queryKeywords = query
+        .toLowerCase()
+        .split(/\W+/)
+        .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
+
       const imageResults: string[] = userImages
+        .filter((img) => {
+          if (!img.extractedData) return false;
+          if (queryKeywords.length === 0) return true;
+          const imgText = img.extractedData.toLowerCase();
+          return queryKeywords.some((kw) => imgText.includes(kw));
+        })
         .slice(0, 3)
-        .filter((img) => img.extractedData)
         .map((img) => img.extractedData as string);
 
       // Generate comprehensive AI response

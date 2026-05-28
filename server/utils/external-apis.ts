@@ -44,6 +44,10 @@ async function getAppIdentifier(): Promise<string> {
 }
 
 export async function fetchFromFEWSNET(params: ExtractedParams): Promise<ExternalApiResult | null> {
+  // Never call FEWSNET without explicit crop or country — avoids returning
+  // arbitrary default data (e.g. "maize, Kenya") for unrelated queries.
+  if (!params.crop && !params.country) return null;
+
   try {
     const country = params.country || "Kenya";
     const commodity = params.crop || "maize";
@@ -155,6 +159,8 @@ export async function fetchFromFEWSNET(params: ExtractedParams): Promise<Externa
 }
 
 export async function fetchFromHDXFoodSecurity(params: ExtractedParams): Promise<ExternalApiResult | null> {
+  if (!params.country) return null;
+
   try {
     const country = params.country || "Kenya";
     const appId = await getAppIdentifier();
