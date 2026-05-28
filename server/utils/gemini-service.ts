@@ -226,6 +226,23 @@ export async function analyzeImage(dataUrl: string, query?: string): Promise<str
   }
 }
 
+export async function askAboutImage(
+  dataUrl: string,
+  filename: string,
+  question: string
+): Promise<string> {
+  const prompt = `You are an image Q&A assistant. The user has an agricultural image named "${filename}" and is asking a specific question about it.
+
+Answer the question based ONLY on what you can observe in the image.
+If the answer cannot be determined from the image, clearly state that.
+
+QUESTION: ${question}
+
+Provide a detailed, accurate answer based on what is visible in the image.`;
+
+  return analyzeImage(dataUrl, prompt);
+}
+
 export async function generateAgricultureResponse(
   query: string,
   params: ExtractedParams,

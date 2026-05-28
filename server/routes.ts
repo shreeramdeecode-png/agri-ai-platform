@@ -11,6 +11,7 @@ import {
   generateAgricultureResponse,
   analyzePdfDocument,
   askAboutDocument,
+  askAboutImage,
   withTimeout,
 } from "./utils/openai-service";
 import { fetchAgricultureData } from "./utils/external-apis";
@@ -409,6 +410,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isTimeout = error.message?.includes("timed out");
       res.status(isTimeout ? 504 : 500).json({
         message: isTimeout ? error.message : `Image upload failed: ${error.message}`,
+      });
+    }
+  });
+
+  // Ask a question about a specific image
+  app.post("/api/images/:id/ask", authMiddleware, async (req, res) => {
+    try {
+      const userId = (req as any).user.userId;
+      const { question } = req.body;
+
+      if (!question || !question.trim()) {
+        return res.status(400).json({ message: "Question is required" });
+      }
+
+      const img = await storage.getImage(req.params.id);
+      if (!img) {
+        return res.status(404).json({ message: "Image not found" });
+      }
+
+      if (img.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const imageBuffer = await fs.readFile(img.filePath);
+      const base64Image = imageBuffer.toString("base64");
+      const mimeType = img.filename.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
+      const dataUrl = `data:${mimeType};base64,${base64Image}`;
+
+      const answer = await withTimeout(
+        askAboutImage(dataUrl, img.filename, question),
+        30000,
+        "Image Q&A"
+      );
+
+      res.json({ answer, imageName: img.filename });
+    } catch (error: any) {
+      console.error("Image ask error:", error.message);
+      const isTimeout = error.message?.includes("timed out");
+      res.status(isTimeout ? 504 : 500).json({
+        message: isTimeout ? error.message : `Failed to process question: ${error.message}`,
       });
     }
   });

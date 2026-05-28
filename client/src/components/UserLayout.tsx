@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { MessageSquarePlus, History, User, LogOut, FileText } from "lucide-react";
+import { MessageSquarePlus, History, User, LogOut, FileText, Image as ImageIcon } from "lucide-react";
 
 export default function UserLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -21,6 +21,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
     { path: "/search", label: "New Chat", icon: MessageSquarePlus, onClick: handleNewChat },
     { path: "/history", label: "History", icon: History },
     { path: "/documents", label: "Documents", icon: FileText },
+    { path: "/images", label: "Images", icon: ImageIcon },
     { path: "/profile", label: "Settings", icon: User },
   ];
 
@@ -28,6 +29,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
     { path: "/search", label: "Chat" },
     { path: "/history", label: "History" },
     { path: "/documents", label: "Documents" },
+    { path: "/images", label: "Images" },
     { path: "/profile", label: "Profile" },
   ];
 
