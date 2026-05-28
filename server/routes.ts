@@ -135,7 +135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Search routes
   // Bump this string whenever the response-shaping logic changes so that old
   // cached results are automatically ignored rather than served stale.
-  const CACHE_VERSION = "v7";
+  const CACHE_VERSION = "v8";
 
   app.post("/api/search/query", authMiddleware, async (req, res) => {
     try {
@@ -222,9 +222,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .slice(0, 3)
         .map((img) => img.extractedData as string);
 
+      // When the PDF has relevant content, do NOT pass images to the AI —
+      // otherwise Gemini may still prefer citing the image source even with
+      // prompt instructions. Documents always win when they cover the topic.
+      const imageResultsForAI = pdfResults.length > 0 ? [] : imageResults;
+
       // Generate comprehensive AI response
       const answer = await withTimeout(
-        generateAgricultureResponse(query, extractedParams, apiResults.map((r) => r.data), pdfResults, imageResults),
+        generateAgricultureResponse(query, extractedParams, apiResults.map((r) => r.data), pdfResults, imageResultsForAI),
         35000,
         "Response generation"
       );
