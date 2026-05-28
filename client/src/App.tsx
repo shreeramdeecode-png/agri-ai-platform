@@ -19,6 +19,7 @@ import AdminNotifications from "@/pages/AdminNotifications";
 import ChatPage from "@/pages/ChatPage";
 import HistoryPage from "@/pages/HistoryPage";
 import ProfilePage from "@/pages/ProfilePage";
+import DocumentsPage from "@/pages/DocumentsPage";
 
 function ProtectedRoute({ component: Component, layout: Layout }: any) {
   const token = localStorage.getItem("token");
@@ -92,6 +93,9 @@ function Router() {
       </Route>
       <Route path="/profile">
         {() => <ProtectedRoute component={ProfilePage} layout={UserLayout} />}
+      </Route>
+      <Route path="/documents">
+        {() => <ProtectedRoute component={DocumentsPage} layout={UserLayout} />}
       </Route>
 
       <Route component={NotFound} />

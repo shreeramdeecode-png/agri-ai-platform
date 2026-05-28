@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { MessageSquarePlus, History, User, LogOut } from "lucide-react";
+import { MessageSquarePlus, History, User, LogOut, FileText } from "lucide-react";
 
 export default function UserLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -20,12 +20,14 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
   const sidebarItems = [
     { path: "/search", label: "New Chat", icon: MessageSquarePlus, onClick: handleNewChat },
     { path: "/history", label: "History", icon: History },
+    { path: "/documents", label: "Documents", icon: FileText },
     { path: "/profile", label: "Settings", icon: User },
   ];
 
   const topNavItems = [
     { path: "/search", label: "Chat" },
     { path: "/history", label: "History" },
+    { path: "/documents", label: "Documents" },
     { path: "/profile", label: "Profile" },
   ];
 
