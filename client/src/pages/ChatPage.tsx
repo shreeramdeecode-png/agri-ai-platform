@@ -268,11 +268,15 @@ export default function ChatPage() {
     const isMarketIntent =
       requestedIntent === "price" || requestedIntent === "food_security";
     const priceData = apiResults.find((api: any) => api.data?.currentPrice);
+    // Market card only when: price intent + crop/country named + API has data
+    // AND the answer did NOT come from a document or image (they are the source in that case)
     const hasRealData =
       priceData &&
       priceData.data?.currentPrice &&
       (requestedCrop != null || requestedCountry != null) &&
-      isMarketIntent;
+      isMarketIntent &&
+      pdfResults.length === 0 &&
+      imageResults.length === 0;
 
     if (!hasRealData && pdfResults.length === 0 && imageResults.length === 0) return null;
 
