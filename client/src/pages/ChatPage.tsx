@@ -259,14 +259,19 @@ export default function ChatPage() {
     const pdfResults = results.pdfResults || [];
     const imageResults = results.imageResults || [];
 
-    // Only show market data when the user actually asked about a specific commodity.
-    // If extractedParams has no crop, the data is likely irrelevant to the question.
+    // Only show market data when the user explicitly asked for prices or food security
+    // AND named a specific crop or country. Queries about cultivation, irrigation,
+    // fertilizer ratios, etc. must never show a market data card.
     const requestedCrop = results.extractedParams?.crop;
+    const requestedIntent = results.extractedParams?.intent;
+    const isMarketIntent =
+      requestedIntent === "price" || requestedIntent === "food_security";
     const priceData = apiResults.find((api: any) => api.data?.currentPrice);
     const hasRealData =
       priceData &&
       priceData.data?.currentPrice &&
-      requestedCrop != null; // user explicitly asked about a crop
+      requestedCrop != null &&
+      isMarketIntent;
 
     if (!hasRealData && pdfResults.length === 0 && imageResults.length === 0) return null;
 

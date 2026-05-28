@@ -53,6 +53,15 @@ Rules:
 - If user specifies a year (e.g., "2024"), set date_start to "2024-01-01" and date_end to "2024-12-31"
 - If user specifies a month (e.g., "January 2025"), set appropriate date range
 
+Intent classification rules (choose EXACTLY one):
+- "price": ONLY when the user explicitly asks about market prices, costs, or monetary values (e.g. "price of maize", "how much does wheat cost", "market rates for rice")
+- "food_security": ONLY when the user asks about hunger, famine, food access, or IPC phases
+- "production": ONLY when the user asks about yield, harvest output, or production volumes
+- "weather": ONLY when the user asks about rainfall, temperature, drought, or climate conditions
+- "general": for ALL other questions — fertilizer recommendations, irrigation methods, pest control, cultivation practices, NPK ratios, best practices, document questions, etc.
+
+IMPORTANT: Mentioning a crop name does NOT make the intent "price". Use "general" for any how-to, recommendation, or knowledge question even if a crop is named.
+
 Extract parameters from the following query and return JSON with:
 {
   "domain": "agriculture|health|finance|general",
@@ -81,10 +90,10 @@ User Query: ${query}`;
               end: parsed.date_end || undefined,
             }
           : undefined,
-      intent: parsed.intent || query,
+      intent: parsed.intent || "general",
     };
   } catch {
-    return { intent: query };
+    return { intent: "general" };
   }
 }
 
