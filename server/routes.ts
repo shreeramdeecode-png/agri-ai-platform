@@ -133,6 +133,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Search routes
+  // Bump this string whenever the response-shaping logic changes so that old
+  // cached results are automatically ignored rather than served stale.
+  const CACHE_VERSION = "v3";
+
   app.post("/api/search/query", authMiddleware, async (req, res) => {
     try {
       const userId = (req as any).user.userId;
@@ -144,19 +148,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const startTime = Date.now();
 
-      // Check cache first — same query by this user in the last 24 hours
+      // Check cache first — same query by this user in the last 24 hours.
+      // Only use the cached entry if it was saved with the current CACHE_VERSION;
+      // older entries (with stale market data, unfiltered images, etc.) are ignored.
       const cached = await storage.findCachedSearch(userId, query);
       if (cached && cached.results) {
         const cachedResults = cached.results as any;
-        return res.json({
-          ...(typeof cachedResults === "object" ? cachedResults : {}),
-          answer: cachedResults.answer,
-          sourceType: cached.sourceType,
-          extractedParams: cached.extractedParams,
-          executionTime: cached.executionTime,
-          cached: true,
-          cachedAt: cached.createdAt,
-        });
+        if (cachedResults.cacheVersion === CACHE_VERSION) {
+          return res.json({
+            ...(typeof cachedResults === "object" ? cachedResults : {}),
+            answer: cachedResults.answer,
+            sourceType: cached.sourceType,
+            extractedParams: cached.extractedParams,
+            executionTime: cached.executionTime,
+            cached: true,
+            cachedAt: cached.createdAt,
+          });
+        }
       }
 
       // Extract intent and classify domain in parallel
@@ -225,6 +233,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!sourceType) sourceType = "None";
 
       const responsePayload = {
+        cacheVersion: CACHE_VERSION,
         answer,
         apiResults: apiResults.map((r) => ({ source: r.source, data: r.data })),
         pdfResults,
