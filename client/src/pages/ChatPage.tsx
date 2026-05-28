@@ -258,8 +258,15 @@ export default function ChatPage() {
     const apiResults = results.apiResults || [];
     const pdfResults = results.pdfResults || [];
     const imageResults = results.imageResults || [];
+
+    // Only show market data when the user actually asked about a specific commodity.
+    // If extractedParams has no crop, the data is likely irrelevant to the question.
+    const requestedCrop = results.extractedParams?.crop;
     const priceData = apiResults.find((api: any) => api.data?.currentPrice);
-    const hasRealData = priceData && priceData.data?.currentPrice;
+    const hasRealData =
+      priceData &&
+      priceData.data?.currentPrice &&
+      requestedCrop != null; // user explicitly asked about a crop
 
     if (!hasRealData && pdfResults.length === 0 && imageResults.length === 0) return null;
 

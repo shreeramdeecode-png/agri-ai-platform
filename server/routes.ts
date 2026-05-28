@@ -171,12 +171,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Fetch data from all sources in parallel, with timeout protection
-      const [apiResults, userDocuments, userImages] = await Promise.all([
-        withTimeout(fetchAgricultureData(extractedParams), 50000, "Agriculture API fetch"),
+      // Determine if this query needs external market data.
+      // Skip the API when the user is asking a general/document question (no specific
+      // crop or market intent) — avoids fetching irrelevant price data.
+      const needsMarketData =
+        extractedParams.crop != null ||
+        extractedParams.country != null ||
+        extractedParams.intent === "price" ||
+        extractedParams.intent === "food_security" ||
+        extractedParams.intent === "production";
+
+      // Fetch documents/images always; market API only when relevant
+      const [userDocuments, userImages] = await Promise.all([
         storage.getUserDocuments(userId),
         storage.getUserImages(userId),
       ]);
+
+      const apiResults = needsMarketData
+        ? await withTimeout(fetchAgricultureData(extractedParams), 50000, "Agriculture API fetch")
+        : [];
 
       // Search in uploaded PDFs
       const pdfResults = userDocuments.length > 0
