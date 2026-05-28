@@ -2,6 +2,11 @@ import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
 
+// @ts-ignore — use the Node.js-compatible legacy build (standard build requires DOMMatrix/browser APIs)
+import * as _pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+const pdfjsLib = _pdfjsLib as any;
+pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
     const uploadDir = path.join(process.cwd(), "uploads");
@@ -37,12 +42,10 @@ export const upload = multer({
 
 export async function extractPdfText(filePath: string): Promise<string> {
   try {
+    console.log("[PDF] Reading file:", filePath);
     const dataBuffer = await fs.readFile(filePath);
     const uint8Array = new Uint8Array(dataBuffer);
-
-    // Use the legacy build for Node.js (standard build requires DOMMatrix which is browser-only)
-    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    (pdfjsLib as any).GlobalWorkerOptions.workerSrc = "";
+    console.log("[PDF] File read OK, bytes:", uint8Array.length);
 
     const doc = await pdfjsLib.getDocument({
       data: uint8Array,
@@ -50,6 +53,8 @@ export async function extractPdfText(filePath: string): Promise<string> {
       isEvalSupported: false,
       useSystemFonts: true,
     }).promise;
+
+    console.log("[PDF] Loaded document, pages:", doc.numPages);
 
     const pages: string[] = [];
     for (let i = 1; i <= doc.numPages; i++) {
@@ -61,9 +66,11 @@ export async function extractPdfText(filePath: string): Promise<string> {
       pages.push(pageText);
     }
 
-    return pages.join("\n").trim();
-  } catch (error) {
-    console.error("Error extracting PDF text:", error);
+    const result = pages.join("\n").trim();
+    console.log("[PDF] Extracted text length:", result.length, "chars");
+    return result;
+  } catch (error: any) {
+    console.error("[PDF] Extraction failed:", error.message);
     return "";
   }
 }

@@ -135,7 +135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Search routes
   // Bump this string whenever the response-shaping logic changes so that old
   // cached results are automatically ignored rather than served stale.
-  const CACHE_VERSION = "v8";
+  const CACHE_VERSION = "v9";
 
   app.post("/api/search/query", authMiddleware, async (req, res) => {
     try {
@@ -183,7 +183,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 1. Gemini classified intent as price or food_security
       // 2. A specific crop or country was named
       // 3. The raw query actually contains a price/market keyword (failsafe against mis-classification)
-      const PRICE_KEYWORDS = /\b(price|cost|cost|rate|market|how much|ksh|usd|per kg|per ton|afford|cheap|expensive|value|worth)\b/i;
+      const PRICE_KEYWORDS = /\b(prices?|costs?|rates?|market|how much|ksh|usd|inr|per kg|per ton|per tonne|afford|cheap|expensive|value|worth)\b/i;
       const needsMarketData =
         (extractedParams.intent === "price" || extractedParams.intent === "food_security") &&
         (extractedParams.crop != null || extractedParams.country != null) &&

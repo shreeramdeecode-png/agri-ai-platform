@@ -1,0 +1,97 @@
+agri_ai_testing_document.pdf
+Why did pulse prices increase recently in India?
+
+The recent increase in pulse prices in India can be attributed to several factors, primarily focusing on supply constraints and market dynamics:
+
+1. **Supply Constraints**: According to the image data, one of the key reasons for the higher pulse prices is a lower supply. This aligns with the general trend of commodity price volatility, where pulses have experienced more significant price jumps compared to wheat and rice. (Source: Image Data)
+
+2. **Price Trends**: The API data provides a specific example from the Port Blair market, where the price of lentils increased from INR 116.82 per KG in January 2023 to INR 140.97 per KG by June 2023. This substantial increase over a few months indicates a strong upward trend in pulse prices, likely due to the aforementioned supply issues. (Source: API Data)
+
+3. **Weather Impact**: The image data suggests that above-normal temperatures might have affected crop yields in some regions, potentially contributing to reduced availability of pulses. However, timely rains in other areas might mitigate this impact to some extent. (Source: Image Data)
+
+Overall, the combination of lower supply and adverse weather conditions has contributed to the recent increase in pulse prices in India. These insights are drawn from both the API data, which highlights specific market trends, and the image data, which provides a broader context of agricultural conditions and challenges.
+
+🌾
+Market Data
+Commodity
+
+Lentils
+
+Location
+
+India
+
+Current Price
+
+INR 140.97/KG
+
+Average Price
+
+INR 140.97/KG
+
+Last Updated
+
+6/15/2023
+
+Document Insights
+Found relevant content in 1 document(s)
+
+Image Analysis
+Analyzed 3 image(s)
+
+Searched in 8.86s
+
+How do monsoon rains affect rice and maize production?
+
+Monsoon rains play a critical role in the production of both rice and maize, influencing their growth cycles and overall yield. Here's how they impact these crops:
+
+### Rice Production
+1. **Water Dependency**: Rice is a water-intensive crop, and monsoon rains are crucial for its cultivation, especially in rain-fed areas. Adequate rainfall ensures that paddy fields are sufficiently flooded, which is essential for rice growth and weed control.
+   
+2. **Yield Influence**: Timely and evenly distributed monsoon rains can lead to higher rice yields. However, excessive rainfall or flooding can damage crops, leading to reduced yields. Conversely, delayed or insufficient rains can result in drought stress, affecting plant growth and productivity.
+
+3. **Regional Variability**: In some regions, the timely arrival of monsoon rains supports rice production, as noted in the image data, which highlights that "timely rains will support crops" (Image Data).
+
+### Maize Production
+1. **Water Requirements**: While maize is less water-intensive than rice, it still requires adequate moisture, particularly during the germination and flowering stages. Monsoon rains provide the necessary water for these critical growth phases.
+
+2. **Impact of Rainfall Patterns**: Consistent monsoon rains can enhance maize yields by ensuring sufficient soil moisture. However, excessive rainfall can lead to waterlogging, which negatively affects root development and nutrient uptake.
+
+3. **Weather Sensitivity**: As with rice, maize production can be adversely affected by extreme weather conditions. The image data mentions that "above-normal temperatures might reduce yields in some regions," indicating that weather patterns, including monsoon variations, are crucial for determining maize productivity (Image Data).
+
+### General Impact
+- **Weather Impact on Crop Production**: The image data emphasizes that weather significantly impacts crop production, with timely rains supporting crops in some areas while above-normal temperatures might reduce yields in others (Image Data).
+
+Overall, monsoon rains are vital for both rice and maize production, affecting water availability, soil conditions, and ultimately, crop yields. The balance between adequate rainfall and extreme weather conditions determines the success of these crops during the monsoon season.
+
+**Sources**: Image Data on weather impact and crop production trends.
+
+🌾
+Market Data
+Commodity
+
+Salt
+
+Location
+
+Kenya
+
+Current Price
+
+KES 20/200 G
+
+Average Price
+
+KES 20/200 G
+
+Last Updated
+
+12/15/2025
+
+Document Insights
+Found relevant content in 1 document(s)
+
+Image Analysis
+Analyzed 3 image(s)
+
+Searched in 22.05s
