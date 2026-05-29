@@ -1,11 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-
-async function throwIfResNotOk(res: Response) {
-  if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
-  }
-}
+import { ApiError, errorFromResponse } from "@/lib/api-errors";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("token");
@@ -16,18 +10,41 @@ export async function apiRequest(
   url: string,
   options: RequestInit = {},
 ): Promise<any> {
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      ...getAuthHeaders(),
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...options.headers,
-    },
-    credentials: "include",
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...options,
+      headers: {
+        ...getAuthHeaders(),
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...options.headers,
+      },
+      credentials: "include",
+    });
+  } catch {
+    throw new ApiError(0, {
+      message: "Network error — check your connection and that the server is running.",
+      code: "EXTERNAL_API_ERROR",
+      retryable: true,
+    });
+  }
 
-  await throwIfResNotOk(res);
-  return res.json();
+  if (!res.ok) {
+    throw await errorFromResponse(res);
+  }
+
+  const text = await res.text();
+  if (!text.trim()) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new ApiError(res.status, {
+      message: "Server returned an invalid response. Restart the dev server and try again.",
+      code: "INTERNAL_ERROR",
+      retryable: true,
+    });
+  }
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
@@ -36,17 +53,40 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
-      headers: getAuthHeaders(),
-      credentials: "include",
-    });
+    let res: Response;
+    try {
+      res = await fetch(queryKey.join("/") as string, {
+        headers: getAuthHeaders(),
+        credentials: "include",
+      });
+    } catch {
+      throw new ApiError(0, {
+        message: "Network error — could not load data.",
+        code: "EXTERNAL_API_ERROR",
+        retryable: true,
+      });
+    }
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
     }
 
-    await throwIfResNotOk(res);
-    return await res.json();
+    if (!res.ok) {
+      throw await errorFromResponse(res);
+    }
+
+    const text = await res.text();
+    if (!text.trim()) return null as T;
+
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      throw new ApiError(res.status, {
+        message: "Invalid response from server.",
+        code: "INTERNAL_ERROR",
+        retryable: true,
+      });
+    }
   };
 
 export const queryClient = new QueryClient({

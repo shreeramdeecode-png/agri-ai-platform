@@ -55,6 +55,7 @@ export interface IStorage {
   getUserSearchHistory(userId: string): Promise<SearchHistory[]>;
   getAllSearchHistory(): Promise<SearchHistory[]>;
   deleteSearchHistory(id: string): Promise<void>;
+  deleteAllUserSearchHistory(userId: string): Promise<number>;
   findCachedSearch(userId: string, query: string): Promise<SearchHistory | undefined>;
   
   // API Settings operations
@@ -201,6 +202,14 @@ export class DbStorage implements IStorage {
 
   async deleteSearchHistory(id: string): Promise<void> {
     await db.delete(schema.searchHistory).where(eq(schema.searchHistory.id, id));
+  }
+
+  async deleteAllUserSearchHistory(userId: string): Promise<number> {
+    const deleted = await db
+      .delete(schema.searchHistory)
+      .where(eq(schema.searchHistory.userId, userId))
+      .returning({ id: schema.searchHistory.id });
+    return deleted.length;
   }
 
   async findCachedSearch(userId: string, query: string): Promise<SearchHistory | undefined> {

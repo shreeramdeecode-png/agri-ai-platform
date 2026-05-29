@@ -1,5 +1,8 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import type { Document } from "@shared/schema";
+import type { ResponseStyle } from "@shared/query-style";
+import { getStyleInstructions } from "@shared/query-style";
+import { GEMINI_MODEL } from "./gemini-config";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
 
@@ -37,7 +40,7 @@ export interface AgricultureData {
 export async function extractQueryIntent(query: string): Promise<ExtractedParams> {
   const today = new Date().toISOString().split("T")[0];
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: GEMINI_MODEL,
     generationConfig: { responseMimeType: "application/json" },
     safetySettings,
   });
@@ -98,7 +101,7 @@ User Query: ${query}`;
 }
 
 export async function classifyDomain(query: string): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", safetySettings });
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL, safetySettings });
   const prompt = `Classify this query into exactly one domain: agriculture, health, finance, or general.
 Return only the single lowercase domain word with no punctuation or explanation.
 
@@ -116,7 +119,7 @@ Query: ${query}`;
 export async function searchInDocuments(query: string, documents: Document[]): Promise<string[]> {
   if (documents.length === 0) return [];
 
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", safetySettings });
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL, safetySettings });
 
   // Process each document separately so each result is clearly tagged with its filename.
   // This prevents source attribution from being lost when results are passed downstream.
@@ -155,21 +158,18 @@ TASK:
 }
 
 export async function analyzePdfDocument(pdfText: string, filename: string): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", safetySettings });
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL, safetySettings });
 
-  const prompt = `You are an expert document analyst. A PDF document named "${filename}" has been uploaded.
-Please provide a comprehensive analysis of this document including:
+  const prompt = `You are an expert document analyst. A PDF named "${filename}" was uploaded.
+Write a SHORT summary (max 8 bullet points, under 120 words total) covering:
+- What the document is about
+- Key numbers or facts a user can ask questions about
+- Main topics (crops, prices, schemes, etc.)
 
-1. **Document Overview** — What type of document is this and what is its main purpose?
-2. **Key Findings** — The most important data, statistics, or conclusions
-3. **Topics Covered** — Main subjects and themes discussed
-4. **Data & Metrics** — Any specific numbers, percentages, or measurements mentioned
-5. **Relevance** — How this document relates to agriculture, food security, or market data
+Do not use markdown bold or headers. Use plain "-" bullets only.
 
 Document Content:
-${pdfText.substring(0, 8000)}
-
-Provide a clear, structured analysis that will help users understand what information they can ask about from this document.`;
+${pdfText.substring(0, 8000)}`;
 
   try {
     const result = await withTimeout(model.generateContent(prompt), 30000, "PDF analysis");
@@ -185,7 +185,7 @@ export async function askAboutDocument(
   filename: string,
   question: string
 ): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", safetySettings });
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL, safetySettings });
 
   const prompt = `You are a document Q&A assistant. The user has a document named "${filename}" and is asking a specific question about it.
 
@@ -208,7 +208,7 @@ Provide a detailed, accurate answer with specific references to the document whe
 }
 
 export async function analyzeImage(dataUrl: string, query?: string): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", safetySettings });
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL, safetySettings });
 
   const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!matches) {
@@ -263,9 +263,11 @@ export async function generateAgricultureResponse(
   params: ExtractedParams,
   apiData: any[],
   pdfData: string[],
-  imageData: string[]
+  imageData: string[],
+  priorContext?: string,
+  responseStyle: ResponseStyle = "default"
 ): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", safetySettings });
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL, safetySettings });
 
   // Parse tagged document results — each entry is "[SOURCE_DOCUMENT: filename]\ncontent"
   const documentSections = pdfData
@@ -294,38 +296,73 @@ export async function generateAgricultureResponse(
   // Build the exact filename list for injection into the prompt
   const documentFilenames = documentSections.map((d) => d.filename);
 
-  const prompt = `You are AgriSearch AI, an expert agriculture intelligence assistant.
+  const hasLivePrice = apiData.some((d) => d?.currentPrice != null);
+  const hasImages = imageData.length > 0;
+  const activeSourceCount =
+    (hasDocumentData ? 1 : 0) + (hasLivePrice ? 1 : 0) + (hasImages ? 1 : 0);
+  const contextBlock =
+    priorContext?.trim()
+      ? `\nCONVERSATION CONTEXT (reference only — answer the USER QUERY):\n${priorContext.trim().slice(0, 400)}\n`
+      : "";
 
+  const sourceParts: string[] = [];
+  if (hasDocumentData) sourceParts.push(documentFilenames[0]);
+  if (hasImages) sourceParts.push("Image Data");
+  if (hasLivePrice) sourceParts.push("Live Market API Data");
+  const combinedSourceLine = sourceParts.join("; ");
+
+  let modeInstructions: string;
+  if (activeSourceCount >= 2) {
+    modeInstructions = `
+MULTI-SOURCE MODE — Use every relevant source section above (document, live API, and/or image).
+  • Combine insights from ALL sections that apply to the query; do not ignore any source because another exists.
+  • When document and live API both have prices, mention both (e.g. document table price vs HDX market price and date).
+  • When document and image overlap, note agreement or useful extra detail from the image.
+  • Do NOT say "no PDF", "no document", or "no image data" when that section has content above.
+  • The LAST line MUST be exactly: Source: ${combinedSourceLine}`;
+  } else if (hasDocumentData) {
+    modeInstructions = `
+DOCUMENT MODE — Answer from the uploaded document(s).
+  • Do NOT say "no PDF" or "no document" when document content is shown above.
+  • The LAST line MUST be: Source: ${documentFilenames[0]}`;
+  } else if (hasLivePrice) {
+    modeInstructions = `
+MARKET API MODE — Answer using LIVE MARKET API DATA (include market/location and date).
+  • The LAST line MUST be: Source: Live Market API Data`;
+  } else if (hasImages) {
+    modeInstructions = `
+IMAGE MODE — Answer from image data above.
+  • The LAST line MUST be: Source: Image Data`;
+  } else {
+    modeInstructions = `
+KNOWLEDGE MODE — No matching document, image, or live price data.
+  • Use general agriculture knowledge; state clearly if live API has no price for the requested crop.
+  • The LAST line MUST be: Source: General Knowledge`;
+  }
+
+  const prompt = `You are AgriSearch AI, an expert agriculture intelligence assistant.
+${contextBlock}
 USER QUERY: ${query}
 
 ═══════════════════════════════════════
-📄 UPLOADED DOCUMENT CONTENT (PRIMARY SOURCE — highest priority)
+UPLOADED DOCUMENT CONTENT
 ${formattedDocuments}
 ═══════════════════════════════════════
-📊 LIVE MARKET API DATA
+LIVE MARKET API DATA
 ${formattedApi}
 ═══════════════════════════════════════
-🖼️ IMAGE DATA
+IMAGE DATA
 ${formattedImages}
 ═══════════════════════════════════════
+${modeInstructions}
 
-${hasDocumentData ? `
-▶ DOCUMENT MODE — The uploaded document(s) contain the answer.
-  • Answer using ONLY the document content above.
-  • Do NOT invent information not present in the document.
-  • Do NOT reference "Image Data" or "image" as a source — images are not available.
-  • The LAST line of your response MUST be exactly (no other wording):
-    **Source:** ${documentFilenames[0]}
-` : `
-▶ KNOWLEDGE MODE — No relevant document content was found.
-  • Answer from the image data or your general agriculture knowledge.
-  • If using image data, say "Source: Image Data".
-  • If using general knowledge, say "Source: General Knowledge".
-`}
+${getStyleInstructions(responseStyle)}
+
 RESPONSE FORMAT:
-1. Answer the question directly with specific facts and numbers from the source
-2. Use bullet points or numbered sections for clarity
-3. Final line MUST be the **Source:** line as specified above — nothing after it
+1. Answer directly with specific facts and numbers from the source(s)
+2. Follow the LENGTH rules above (one-word mode: no bullets)
+3. No markdown bold, no **, no ## headers
+4. Final line MUST be the Source: line as specified above — nothing after it
 
 Answer:`;
 

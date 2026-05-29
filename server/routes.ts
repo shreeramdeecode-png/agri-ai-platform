@@ -1,4 +1,4 @@
-import type { Express, Request } from "express";
+import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { generateToken, comparePassword, authMiddleware, adminMiddleware } from "./utils/auth";
@@ -16,6 +16,9 @@ import {
 } from "./utils/openai-service";
 import { fetchAgricultureData } from "./utils/external-apis";
 import { insertUserSchema, insertSearchHistorySchema, insertApiSettingSchema } from "@shared/schema";
+import { stripFollowUpQuery, normalizeAnswerText } from "@shared/market";
+import { parseResponseStyle } from "@shared/query-style";
+import { AppError, logRouteError, sendError } from "./utils/errors";
 import path from "path";
 import fs from "fs/promises";
 
@@ -24,6 +27,7 @@ interface MulterRequest extends Request {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
   // Auth routes
   app.post("/api/auth/signup", async (req, res) => {
@@ -51,8 +55,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           role: user.role,
         },
       });
-    } catch (error: any) {
-      res.status(400).json({ message: error.message || "Signup failed" });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -89,8 +93,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           role: user.role,
         },
       });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message || "Login failed" });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -111,8 +115,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         role: user.role,
         createdAt: user.createdAt,
       });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -127,22 +131,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const user = await storage.updateUser(userId, updates);
       res.json({ message: "Profile updated successfully", user });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
   // Search routes
   // Bump this string whenever the response-shaping logic changes so that old
   // cached results are automatically ignored rather than served stale.
-  const CACHE_VERSION = "v10";
+  const CACHE_VERSION = "v13";
 
   app.post("/api/search/query", authMiddleware, async (req, res) => {
     try {
       const userId = (req as any).user.userId;
-      const { query } = req.body;
+      const { priorContext } = req.body;
+      const query = stripFollowUpQuery(String(req.body.query || ""));
+      const { style: responseStyle, coreQuery } = parseResponseStyle(query);
 
-      if (!query || !query.trim()) {
+      if (!query.trim()) {
         return res.status(400).json({ message: "Query is required" });
       }
 
@@ -158,6 +164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.json({
             ...(typeof cachedResults === "object" ? cachedResults : {}),
             answer: cachedResults.answer,
+            responseStyle: cachedResults.responseStyle ?? responseStyle,
             sourceType: cached.sourceType,
             extractedParams: cached.extractedParams,
             executionTime: cached.executionTime,
@@ -167,16 +174,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Extract intent and classify domain in parallel
+      // Extract intent and classify domain in parallel (use core query without style phrases)
       const [extractedParams, domain] = await Promise.all([
-        extractQueryIntent(query),
-        classifyDomain(query),
+        extractQueryIntent(coreQuery),
+        classifyDomain(coreQuery),
       ]);
 
       if (domain !== "agriculture") {
-        return res.status(400).json({
-          message: "Currently only agriculture domain queries are supported. Please ask about crops, food prices, food security, or related topics.",
-        });
+        throw new AppError(
+          400,
+          "Currently only agriculture queries are supported. Try crops, prices, food security, soil, or farming practices.",
+          "DOMAIN_NOT_SUPPORTED",
+        );
       }
 
       // Only fetch market data when ALL THREE conditions are true:
@@ -184,10 +193,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 2. A specific crop or country was named
       // 3. The raw query actually contains a price/market keyword (failsafe against mis-classification)
       const PRICE_KEYWORDS = /\b(prices?|costs?|rates?|market|how much|ksh|usd|inr|per kg|per ton|per tonne|afford|cheap|expensive|value|worth)\b/i;
-      const needsMarketData =
-        (extractedParams.intent === "price" || extractedParams.intent === "food_security") &&
-        (extractedParams.crop != null || extractedParams.country != null) &&
-        PRICE_KEYWORDS.test(query);
+      const useAllSources = responseStyle === "brief" || responseStyle === "one-word";
+      const needsMarketData = useAllSources
+        ? extractedParams.crop != null || extractedParams.country != null
+        : (extractedParams.intent === "price" || extractedParams.intent === "food_security") &&
+          (extractedParams.crop != null || extractedParams.country != null) &&
+          PRICE_KEYWORDS.test(coreQuery);
 
       // Fetch documents/images always; market API only when relevant
       const [userDocuments, userImages] = await Promise.all([
@@ -197,70 +208,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Run API fetch + PDF search in parallel for speed
       const STOP_WORDS = new Set(["the","a","an","is","in","of","to","and","or","for","on","with","that","this","are","it","be","from","by","at","which","what","how","do","does","can","help","about","more","some","have","has"]);
-      const queryKeywords = query
+      const queryKeywords = coreQuery
         .toLowerCase()
         .split(/\W+/)
         .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
 
-      const [apiResults, pdfResults] = await Promise.all([
+      const [apiResultsRaw, pdfResults] = await Promise.all([
         needsMarketData
-          ? withTimeout(fetchAgricultureData(extractedParams), 50000, "Agriculture API fetch")
+          ? withTimeout(fetchAgricultureData(extractedParams, { priceOnly: true }), 50000, "Agriculture API fetch")
           : Promise.resolve([]),
         userDocuments.length > 0
-          ? withTimeout(searchInDocuments(query, userDocuments), 30000, "Document search")
+          ? withTimeout(searchInDocuments(coreQuery, userDocuments), 30000, "Document search")
           : Promise.resolve([]),
       ]);
+
+      const apiResults = apiResultsRaw.filter(
+        (r) => r.data?.currentPrice != null
+      );
 
       // Filter images by keyword relevance
       const imageResults: string[] = userImages
         .filter((img) => {
           if (!img.extractedData) return false;
-          if (queryKeywords.length === 0) return true;
+          if (useAllSources || queryKeywords.length === 0) return true;
           const imgText = img.extractedData.toLowerCase();
           return queryKeywords.some((kw) => imgText.includes(kw));
         })
-        .slice(0, 3)
+        .slice(0, useAllSources ? 5 : 3)
         .map((img) => img.extractedData as string);
 
-      // Documents win: never send images to the AI when a PDF already answered.
-      // This prevents "Image Data" citations when a document is the real source.
-      const imageResultsForAI = pdfResults.length > 0 ? [] : imageResults;
-      console.log(`[Search] pdfs=${pdfResults.length} images=${imageResults.length} imagesForAI=${imageResultsForAI.length} api=${apiResults.length}`);
+      console.log(
+        `[Search] pdfs=${pdfResults.length} images=${imageResults.length} api=${apiResults.length}`
+      );
 
-      // Generate comprehensive AI response
+      // Generate comprehensive AI response (use all available sources together)
       const answer = await withTimeout(
-        generateAgricultureResponse(query, extractedParams, apiResults.map((r) => r.data), pdfResults, imageResultsForAI),
+        generateAgricultureResponse(
+          query,
+          extractedParams,
+          apiResults.map((r) => r.data),
+          pdfResults,
+          imageResults,
+          typeof priorContext === "string" ? priorContext : undefined,
+          responseStyle
+        ),
         35000,
         "Response generation"
       );
 
-      // If pdfResults exist but Gemini forgot to include a Source line, append it
-      // so the citation is always present in the answer text.
-      let finalAnswer = answer;
-      if (pdfResults.length > 0 && !answer.includes("**Source:**")) {
-        const filenames = pdfResults
-          .map((r) => r.match(/^\[SOURCE_DOCUMENT: (.+?)\]/)?.[1])
-          .filter(Boolean);
-        if (filenames.length > 0) {
-          finalAnswer = answer + `\n\n**Source:** ${filenames[0]}`;
+      let finalAnswer = normalizeAnswerText(answer);
+      if (!/Source:/i.test(finalAnswer)) {
+        const sources: string[] = [];
+        if (pdfResults.length > 0) {
+          const name = pdfResults[0].match(/^\[SOURCE_DOCUMENT: (.+?)\]/)?.[1];
+          if (name) sources.push(name);
+        }
+        if (imageResults.length > 0) sources.push("Image Data");
+        if (apiResults.length > 0) sources.push("Live Market API Data");
+        if (sources.length > 0) {
+          finalAnswer = finalAnswer + `\n\nSource: ${sources.join("; ")}`;
         }
       }
 
       let sourceType = "";
       if (apiResults.length > 0) sourceType += "API";
       if (pdfResults.length > 0) sourceType += sourceType ? "+PDF" : "PDF";
-      // Only mark Image in sourceType when images were actually used by the AI
-      if (imageResultsForAI.length > 0) sourceType += sourceType ? "+Image" : "Image";
+      if (imageResults.length > 0) sourceType += sourceType ? "+Image" : "Image";
       if (!sourceType) sourceType = "None";
 
       const responsePayload = {
         cacheVersion: CACHE_VERSION,
         answer: finalAnswer,
+        responseStyle,
         apiResults: apiResults.map((r) => ({ source: r.source, data: r.data })),
         pdfResults,
-        // Send only the images actually used by the AI — this drives the
-        // "Image Analysis" UI card, so it should be empty when PDF answered.
-        imageResults: imageResultsForAI,
+        imageResults,
       };
 
       // Save to history
@@ -283,14 +305,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         executionTime: Date.now() - startTime,
         cached: false,
       });
-    } catch (error: any) {
-      console.error("Search error:", error.message);
-      const isTimeout = error.message?.includes("timed out");
-      res.status(isTimeout ? 504 : 500).json({
-        message: isTimeout
-          ? error.message
-          : `Search failed: ${error.message || "An unexpected error occurred"}`,
-      });
+    } catch (error) {
+      logRouteError("Search", error);
+      sendError(res, error);
     }
   });
 
@@ -299,17 +316,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req as any).user.userId;
       const history = await storage.getUserSearchHistory(userId);
       res.json(history);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.post("/api/search/history/clear-all", authMiddleware, async (req, res) => {
+    try {
+      const userId = (req as any).user.userId;
+      const deleted = await storage.deleteAllUserSearchHistory(userId);
+      res.json({ message: "All search history cleared", deleted });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
   app.delete("/api/search/history/:id", authMiddleware, async (req, res) => {
     try {
-      await storage.deleteSearchHistory(req.params.id);
+      const { id } = req.params;
+      if (id === "clear" || id === "clear-all") {
+        return res.status(404).json({ message: "Not found" });
+      }
+      const userId = (req as any).user.userId;
+      const history = await storage.getUserSearchHistory(userId);
+      const entry = history.find((h) => h.id === id);
+      if (!entry) {
+        return res.status(404).json({ message: "History entry not found" });
+      }
+      await storage.deleteSearchHistory(id);
       res.json({ message: "History entry deleted" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -354,15 +391,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         document,
         summary,
       });
-    } catch (error: any) {
-      console.error("Document upload error:", error.message);
+    } catch (error) {
+      logRouteError("Document upload", error);
       if (req.file?.path) {
         await deleteFile(req.file.path).catch(() => {});
       }
-      const isTimeout = error.message?.includes("timed out");
-      res.status(isTimeout ? 504 : 500).json({
-        message: isTimeout ? error.message : `Upload failed: ${error.message}`,
-      });
+      sendError(res, error);
     }
   });
 
@@ -396,12 +430,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       res.json({ answer, documentName: doc.filename });
-    } catch (error: any) {
-      console.error("Document ask error:", error.message);
-      const isTimeout = error.message?.includes("timed out");
-      res.status(isTimeout ? 504 : 500).json({
-        message: isTimeout ? error.message : `Failed to process question: ${error.message}`,
-      });
+    } catch (error) {
+      logRouteError("Document ask", error);
+      sendError(res, error);
     }
   });
 
@@ -410,8 +441,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req as any).user.userId;
       const documents = await storage.getUserDocuments(userId);
       res.json(documents);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -423,8 +454,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.deleteDocument(req.params.id);
       }
       res.json({ message: "Document deleted" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -456,15 +487,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       res.json({ message: "Image uploaded and analyzed successfully", image, analysis: extractedData });
-    } catch (error: any) {
-      console.error("Image upload error:", error.message);
+    } catch (error) {
+      logRouteError("Image upload", error);
       if (req.file?.path) {
         await deleteFile(req.file.path).catch(() => {});
       }
-      const isTimeout = error.message?.includes("timed out");
-      res.status(isTimeout ? 504 : 500).json({
-        message: isTimeout ? error.message : `Image upload failed: ${error.message}`,
-      });
+      sendError(res, error);
     }
   });
 
@@ -499,12 +527,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       res.json({ answer, imageName: img.filename });
-    } catch (error: any) {
-      console.error("Image ask error:", error.message);
-      const isTimeout = error.message?.includes("timed out");
-      res.status(isTimeout ? 504 : 500).json({
-        message: isTimeout ? error.message : `Failed to process question: ${error.message}`,
-      });
+    } catch (error) {
+      logRouteError("Image ask", error);
+      sendError(res, error);
     }
   });
 
@@ -513,8 +538,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req as any).user.userId;
       const images = await storage.getUserImages(userId);
       res.json(images);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -526,8 +551,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.deleteImage(req.params.id);
       }
       res.json({ message: "Image deleted" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -536,8 +561,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const stats = await storage.getDashboardStats();
       res.json(stats);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -545,8 +570,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const analytics = await storage.getQueryAnalytics();
       res.json(analytics);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -563,8 +588,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           createdAt: u.createdAt,
         }))
       );
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -582,8 +607,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       res.json({ message: "User updated", user });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -600,8 +625,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       res.json({ message: "User deleted" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -625,8 +650,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       res.json({ message: "User created", user });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -634,8 +659,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documents = await storage.getAllDocuments();
       res.json(documents);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -643,8 +668,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const images = await storage.getAllImages();
       res.json(images);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -652,8 +677,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const logs = await storage.getAllAdminLogs();
       res.json(logs);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -661,8 +686,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const history = await storage.getAllSearchHistory();
       res.json(history);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -670,8 +695,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const settings = await storage.getAllApiSettings();
       res.json(settings);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -699,8 +724,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       res.json({ message: "Setting updated", setting });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -709,8 +734,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const notifications = await storage.getAllNotifications();
       res.json(notifications);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -718,8 +743,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.clearAllNotifications();
       res.json({ message: "All notifications cleared" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
@@ -727,19 +752,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteNotification(req.params.id);
       res.json({ message: "Notification deleted" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
+    } catch (error) {
+      sendError(res, error);
     }
   });
 
-  // Global error handler
-  app.use((err: any, _req: Request, res: any, _next: any) => {
-    console.error("Unhandled error:", err);
-    const status = err.status || err.statusCode || 500;
-    const isTimeout = err.message?.includes("timed out");
-    res.status(isTimeout ? 504 : status).json({
-      message: err.message || "Internal Server Error",
-    });
+  // Unknown API routes (must be after all /api handlers)
+  app.all("/api/*", (_req, res) => {
+    sendError(res, new AppError(404, "API endpoint not found.", "NOT_FOUND"));
+  });
+
+  // Multer and other middleware errors forwarded via next(err)
+  app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+    if (res.headersSent) return next(err);
+    logRouteError(`${req.method} ${req.path}`, err);
+    sendError(res, err);
   });
 
   const httpServer = createServer(app);

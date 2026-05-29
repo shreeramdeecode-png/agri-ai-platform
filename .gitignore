@@ -1,5 +1,8 @@
 node_modules
 dist
+.env
+uploads/*
+!uploads/.gitkeep
 .DS_Store
 server/public
 vite.config.ts.*

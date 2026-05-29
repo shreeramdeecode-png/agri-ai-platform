@@ -1,4 +1,5 @@
 import axios from "axios";
+import { commodityMatches } from "@shared/market";
 import type { ExtractedParams } from "./openai-service";
 
 export interface ExternalApiResult {
@@ -77,13 +78,23 @@ export async function fetchFromFEWSNET(params: ExtractedParams): Promise<Externa
     
     let priceData = response.data?.data || [];
     
-    if (commodity && priceData.length > 0) {
-      const filtered = priceData.filter((record: any) => 
-        record.commodity_name?.toLowerCase().includes(commodity.toLowerCase())
+    if (params.crop && priceData.length > 0) {
+      const filtered = priceData.filter((record: any) =>
+        commodityMatches(params.crop, record.commodity_name || "")
       );
-      if (filtered.length > 0) {
-        priceData = filtered;
+      if (filtered.length === 0) {
+        return {
+          source: "HDX HAPI",
+          data: {
+            crop: params.crop,
+            country,
+            message: `No live price data found for ${params.crop} in ${country}`,
+            currentPrice: null,
+          },
+          timestamp: new Date(),
+        };
       }
+      priceData = filtered;
     }
 
     if (priceData.length > 0) {
@@ -127,7 +138,9 @@ export async function fetchFromFEWSNET(params: ExtractedParams): Promise<Externa
           lastUpdated: latestPrice.date,
           priceHistory: priceRecords.slice(0, 6),
           recordCount: priceRecords.length,
-          dataNote: params.dateRange?.start ? `Data for period: ${params.dateRange.start}` : "Most recent available data"
+          dataNote: params.dateRange?.start
+            ? `Data for period: ${params.dateRange.start}`
+            : "Latest available in HDX (may not be real-time)"
         },
         timestamp: new Date()
       };
@@ -250,18 +263,33 @@ export async function fetchFromHDXPopulation(params: ExtractedParams): Promise<E
   }
 }
 
-export async function fetchAgricultureData(params: ExtractedParams): Promise<ExternalApiResult[]> {
+export async function fetchAgricultureData(
+  params: ExtractedParams,
+  options?: { priceOnly?: boolean }
+): Promise<ExternalApiResult[]> {
+  if (options?.priceOnly) {
+    const price = await fetchFromFEWSNET(params);
+    if (!price) return [];
+    if (price.data?.currentPrice == null) return [];
+    if (params.crop && !commodityMatches(params.crop, price.data.crop)) return [];
+    return [price];
+  }
+
   const results = await Promise.allSettled([
     fetchFromFEWSNET(params),
     fetchFromHDXFoodSecurity(params),
-    fetchFromHDXPopulation(params)
+    fetchFromHDXPopulation(params),
   ]);
 
   const successfulResults: ExternalApiResult[] = [];
-  
+
   for (const result of results) {
     if (result.status === "fulfilled" && result.value !== null) {
-      successfulResults.push(result.value);
+      const value = result.value;
+      if (value.data?.currentPrice != null && params.crop && !commodityMatches(params.crop, value.data.crop)) {
+        continue;
+      }
+      successfulResults.push(value);
     }
   }
 

@@ -1,0 +1,22 @@
+Fix PDF extraction, source attribution, and market data display
+
+Root causes found and fixed:
+1. pdfjs-dist static import crashed server at startup (no logs, silent fail)
+   → Replaced with Gemini's native PDF understanding (inline base64 PDF input)
+   → No external PDF library dependencies anymore
+
+2. Source attribution: images always competed with PDF content
+   → imageResultsForAI = [] when pdfResults.length > 0 (physical exclusion)
+   → Gemini prompt now inlines exact filename: "**Source:** agri_ai_testing_document.pdf"
+   → Server-side fallback appends Source line if Gemini omits it
+
+3. Market data card shown for wrong queries
+   → PRICE_KEYWORDS now catches plurals (prices, costs, rates) and inr
+   → UI hasRealData also requires pdfResults.length === 0 && imageResults.length === 0
+   → Market card hidden whenever doc or image answered the question
+
+4. Image Analysis card shown even when PDF answered
+   → Response payload sends imageResultsForAI (not imageResults)
+   → Card only appears when images were actually used by the AI
+
+Cache bumped to v9, all stale entries cleared.

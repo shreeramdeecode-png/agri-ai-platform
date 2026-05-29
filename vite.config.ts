@@ -1,9 +1,15 @@
+import "dotenv/config";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
+const geminiModelId = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+
 export default defineConfig({
+  define: {
+    __GEMINI_MODEL_ID__: JSON.stringify(geminiModelId),
+  },
   plugins: [
     react(),
     runtimeErrorOverlay(),

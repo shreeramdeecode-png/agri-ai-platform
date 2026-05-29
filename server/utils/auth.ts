@@ -31,15 +31,23 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
   const token = req.headers.authorization?.replace("Bearer ", "");
   
   if (!token) {
-    return res.status(401).json({ message: "Authentication required" });
+    return res.status(401).json({
+      message: "Authentication required",
+      code: "UNAUTHORIZED",
+      retryable: false,
+    });
   }
 
   try {
     const payload = verifyToken(token);
     (req as any).user = payload;
     next();
-  } catch (error) {
-    return res.status(401).json({ message: "Invalid or expired token" });
+  } catch {
+    return res.status(401).json({
+      message: "Invalid or expired token. Please sign in again.",
+      code: "UNAUTHORIZED",
+      retryable: false,
+    });
   }
 }
 
@@ -47,7 +55,11 @@ export function adminMiddleware(req: Request, res: Response, next: NextFunction)
   const user = (req as any).user;
   
   if (!user || user.role !== "admin") {
-    return res.status(403).json({ message: "Admin access required" });
+    return res.status(403).json({
+      message: "Admin access required",
+      code: "FORBIDDEN",
+      retryable: false,
+    });
   }
   
   next();

@@ -4,13 +4,21 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Send, Paperclip, FileText, Image, X, Loader2, AlertCircle, RefreshCw, Zap, Clock } from "lucide-react";
+import { Send, Paperclip, FileText, Image, X, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import type { SearchHistory } from "@shared/schema";
+import { FormatChatContent } from "@/lib/formatChatContent";
+import { commodityMatches } from "@/lib/market";
+import { splitAssistantContent } from "@/lib/chatMessageUtils";
+import { AssistantMessageFooter } from "@/components/AssistantMessageFooter";
+import { getErrorMessage, isRetryableError, errorTitle } from "@/lib/api-errors";
+import { authFetchJson } from "@/lib/auth-fetch";
 
 interface Message {
   id: string;
   type: "user" | "assistant" | "error";
   content: string;
+  errorTitle?: string;
+  retryable?: boolean;
   query?: string;
   results?: any;
   executionTime?: number;
@@ -93,30 +101,20 @@ export default function ChatPage() {
     formData.append("file", file);
     const isPDF = file.type === "application/pdf";
     const endpoint = isPDF ? "/api/documents/upload" : "/api/images/upload";
-    const token = localStorage.getItem("token");
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData,
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({ message: "Upload failed" }));
-      throw new Error(err.message || "Upload failed");
-    }
-    return response.json();
+    return authFetchJson(endpoint, { method: "POST", body: formData });
   };
 
   const searchMutation = useMutation({
     mutationFn: async (searchQuery: string) => {
-      const fullQuery = conversationContext
-        ? `Follow-up question (previous context: ${conversationContext.slice(0, 300)}): ${searchQuery}`
-        : searchQuery;
       return apiRequest("/api/search/query", {
         method: "POST",
-        body: JSON.stringify({ query: fullQuery }),
+        body: JSON.stringify({
+          query: searchQuery,
+          priorContext: conversationContext ? conversationContext.slice(-400) : undefined,
+        }),
       });
     },
-    onSuccess: (data) => {
+    onSuccess: (data, searchQuery) => {
       queryClient.invalidateQueries({ queryKey: ["/api/search/history"] });
       const assistantMessage: Message = {
         id: `assistant-${Date.now()}`,
@@ -129,13 +127,17 @@ export default function ChatPage() {
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, assistantMessage]);
-      setConversationContext((prev) => (prev + " " + data.answer).slice(-1000));
+      setConversationContext(
+        `Q: ${searchQuery} A: ${(data.answer || "").slice(0, 200)}`
+      );
     },
-    onError: (error: any, variables) => {
+    onError: (error: unknown, variables) => {
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         type: "error",
-        content: error.message || "Search failed. Please try again.",
+        errorTitle: errorTitle(error),
+        content: getErrorMessage(error),
+        retryable: isRetryableError(error),
         failedQuery: variables,
         timestamp: new Date(),
       };
@@ -185,7 +187,9 @@ export default function ChatPage() {
         const errMsg: Message = {
           id: `error-${Date.now()}`,
           type: "error",
-          content: `File upload failed: ${error.message}`,
+          errorTitle: errorTitle(error),
+          content: getErrorMessage(error),
+          retryable: isRetryableError(error),
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, errMsg]);
@@ -207,7 +211,7 @@ export default function ChatPage() {
     setQuery("");
     setAttachments([]);
 
-    if (uploadedAttachments.length > 0 && uploadedAttachments[0].summary) {
+    if (uploadedAttachments.length > 0 && uploadedAttachments[0].summary && !query.trim()) {
       const summaryMsg: Message = {
         id: `summary-${Date.now()}`,
         type: "assistant",
@@ -267,16 +271,16 @@ export default function ChatPage() {
     const requestedIntent = results.extractedParams?.intent;
     const isMarketIntent =
       requestedIntent === "price" || requestedIntent === "food_security";
-    const priceData = apiResults.find((api: any) => api.data?.currentPrice);
-    // Market card only when: price intent + crop/country named + API has data
-    // AND the answer did NOT come from a document or image (they are the source in that case)
+    const priceData = apiResults.find(
+      (api: any) =>
+        api.data?.currentPrice != null &&
+        commodityMatches(requestedCrop, api.data?.crop)
+    );
     const hasRealData =
       priceData &&
-      priceData.data?.currentPrice &&
+      priceData.data?.currentPrice != null &&
       (requestedCrop != null || requestedCountry != null) &&
-      isMarketIntent &&
-      pdfResults.length === 0 &&
-      imageResults.length === 0;
+      isMarketIntent;
 
     if (!hasRealData && pdfResults.length === 0 && imageResults.length === 0) return null;
 
@@ -298,7 +302,11 @@ export default function ChatPage() {
               {priceData.data.country && (
                 <div>
                   <p className="text-gray-500 dark:text-gray-400 text-xs">Location</p>
-                  <p className="font-medium text-gray-800 dark:text-gray-200">{priceData.data.country}</p>
+                  <p className="font-medium text-gray-800 dark:text-gray-200">
+                    {[priceData.data.market, priceData.data.region, priceData.data.country]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </p>
                 </div>
               )}
               {priceData.data.currentPrice && (
@@ -319,7 +327,7 @@ export default function ChatPage() {
               )}
               {priceData.data.lastUpdated && (
                 <div className="col-span-2">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Last Updated</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">Last updated (HDX)</p>
                   <p className="font-medium text-gray-800 dark:text-gray-200">
                     {new Date(priceData.data.lastUpdated).toLocaleDateString()}
                   </p>
@@ -366,19 +374,23 @@ export default function ChatPage() {
               What would you like to know?
             </h1>
             <p className="text-gray-400 max-w-lg mx-auto">
-              Ask anything about agriculture, climate, or market data. Attach PDFs and images for AI-powered analysis.
+              Ask anything about agriculture, climate, or market data. Attach PDFs and images for
+              AI-powered analysis.
             </p>
             <div className="flex flex-wrap gap-3 justify-center mt-8">
-              {["Maize prices in Kenya", "Food security Ethiopia", "Wheat market trends"].map((suggestion) => (
-                <button
-                  key={suggestion}
-                  onClick={() => setQuery(suggestion)}
-                  className="px-4 py-2 bg-[#2a3749] hover:bg-[#3a4759] text-gray-300 rounded-full text-sm transition-colors"
-                  data-testid={`button-suggestion-${suggestion}`}
-                >
-                  {suggestion}
-                </button>
-              ))}
+              {["Maize prices in Kenya", "Food security Ethiopia", "Wheat market trends"].map(
+                (suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => setQuery(suggestion)}
+                    className="px-4 py-2 bg-[#2a3749] hover:bg-[#3a4759] text-gray-300 rounded-full text-sm transition-colors"
+                    data-testid={`button-suggestion-${suggestion}`}
+                  >
+                    {suggestion}
+                  </button>
+                )
+              )}
             </div>
           </div>
         )}
@@ -388,11 +400,14 @@ export default function ChatPage() {
             return (
               <div key={message.id} className="flex justify-start">
                 <div className="max-w-[85%] bg-red-900/30 border border-red-500/40 rounded-2xl px-5 py-4">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-red-400 mt-0.5 shrink-0" />
+                  <div className="flex items-center gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
                     <div className="flex-1">
+                      {message.errorTitle && (
+                        <p className="text-red-200 font-medium text-sm mb-1">{message.errorTitle}</p>
+                      )}
                       <p className="text-red-300 text-sm">{message.content}</p>
-                      {message.failedQuery && (
+                      {message.failedQuery && message.retryable !== false && (
                         <button
                           onClick={() => handleRetry(message.failedQuery!)}
                           className="mt-2 flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors"
@@ -422,18 +437,6 @@ export default function ChatPage() {
                 }`}
                 data-testid={`message-${message.type}-${message.id}`}
               >
-                {message.type === "assistant" && message.cached && (
-                  <div className="flex items-center gap-1.5 mb-2 text-xs text-yellow-400/80">
-                    <Zap className="w-3 h-3" />
-                    <span>Cached response</span>
-                    {message.cachedAt && (
-                      <span className="text-gray-500">
-                        · {new Date(message.cachedAt).toLocaleTimeString()}
-                      </span>
-                    )}
-                  </div>
-                )}
-
                 {message.attachments && message.attachments.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-2">
                     {message.attachments.map((att, idx) => (
@@ -452,19 +455,26 @@ export default function ChatPage() {
                   </div>
                 )}
 
-                <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
-
-                {message.type === "assistant" && message.results && formatApiResults(message.results)}
-
-                {message.executionTime !== undefined && (
-                  <div className="flex items-center gap-1 mt-3 text-xs text-gray-400">
-                    <Clock className="w-3 h-3" />
-                    <span>
-                      {message.cached
-                        ? "Instant (cached)"
-                        : `${(message.executionTime / 1000).toFixed(2)}s`}
-                    </span>
-                  </div>
+                {message.type === "assistant" ? (
+                  <>
+                    {(() => {
+                      const { body, source } = splitAssistantContent(message.content);
+                      return (
+                        <>
+                          <FormatChatContent content={body} />
+                          {message.results && formatApiResults(message.results)}
+                          <AssistantMessageFooter
+                            source={source}
+                            executionTime={message.executionTime}
+                            cached={message.cached}
+                            cachedAt={message.cachedAt}
+                          />
+                        </>
+                      );
+                    })()}
+                  </>
+                ) : (
+                  <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
                 )}
               </div>
             </div>

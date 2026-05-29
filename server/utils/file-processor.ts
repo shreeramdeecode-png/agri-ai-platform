@@ -2,6 +2,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GEMINI_MODEL } from "./gemini-config";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
 
@@ -47,7 +48,7 @@ export async function extractPdfText(filePath: string): Promise<string> {
     const base64Data = dataBuffer.toString("base64");
     console.log("[PDF] File size:", dataBuffer.length, "bytes");
 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
 
     const result = await model.generateContent([
       {
