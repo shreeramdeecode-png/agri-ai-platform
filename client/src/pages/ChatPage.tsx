@@ -24,6 +24,8 @@ interface Message {
   executionTime?: number;
   cached?: boolean;
   cachedAt?: string;
+  /** Shown above assistant bubble (e.g. uploaded filename). */
+  sourceFilename?: string;
   attachments?: { type: "pdf" | "image"; name: string; id?: string; summary?: string }[];
   timestamp: Date;
   failedQuery?: string;
@@ -116,20 +118,63 @@ export default function ChatPage() {
     },
     onSuccess: (data, searchQuery) => {
       queryClient.invalidateQueries({ queryKey: ["/api/search/history"] });
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        type: "assistant",
-        content: data.answer || "I found some results for your query.",
-        results: data,
-        executionTime: data.executionTime,
-        cached: data.cached,
-        cachedAt: data.cachedAt,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-      setConversationContext(
-        `Q: ${searchQuery} A: ${(data.answer || "").slice(0, 200)}`
-      );
+      const ts = Date.now();
+      const newMessages: Message[] = [];
+
+      const generalContent =
+        data.generalAnswer || data.answer || "I found some results for your query.";
+      const showGeneral = !data.omitGeneral;
+
+      if (showGeneral) {
+        newMessages.push({
+          id: `assistant-${ts}-general`,
+          type: "assistant",
+          content: generalContent,
+          results: data,
+          executionTime: data.executionTime,
+          cached: data.cached,
+          cachedAt: data.cachedAt,
+          timestamp: new Date(),
+        });
+      }
+
+      let attachResultsToFile = !showGeneral;
+      for (const doc of data.documentAnswers ?? []) {
+        newMessages.push({
+          id: `assistant-${ts}-doc-${doc.filename}`,
+          type: "assistant",
+          content: doc.content,
+          sourceFilename: doc.filename,
+          results: attachResultsToFile ? data : undefined,
+          executionTime: attachResultsToFile ? data.executionTime : undefined,
+          cached: attachResultsToFile ? data.cached : undefined,
+          cachedAt: attachResultsToFile ? data.cachedAt : undefined,
+          timestamp: new Date(),
+        });
+        attachResultsToFile = false;
+      }
+
+      for (const img of data.imageAnswers ?? []) {
+        newMessages.push({
+          id: `assistant-${ts}-img-${img.filename}`,
+          type: "assistant",
+          content: img.content,
+          sourceFilename: img.filename,
+          results: attachResultsToFile ? data : undefined,
+          executionTime: attachResultsToFile ? data.executionTime : undefined,
+          cached: attachResultsToFile ? data.cached : undefined,
+          cachedAt: attachResultsToFile ? data.cachedAt : undefined,
+          timestamp: new Date(),
+        });
+        attachResultsToFile = false;
+      }
+
+      setMessages((prev) => [...prev, ...newMessages]);
+      const contextAnswer =
+        showGeneral
+          ? generalContent
+          : (data.documentAnswers?.[0]?.content || data.imageAnswers?.[0]?.content || "");
+      setConversationContext(`Q: ${searchQuery} A: ${contextAnswer.slice(0, 200)}`);
     },
     onError: (error: unknown, variables) => {
       const errorMessage: Message = {
@@ -170,11 +215,21 @@ export default function ChatPage() {
         for (const file of attachments) {
           const result = await uploadFile(file);
           const isPDF = file.type === "application/pdf";
+          const uploadPayload = result as {
+            summary?: string;
+            analysis?: string;
+            document?: { analysisSummary?: string };
+            image?: { extractedData?: string };
+          };
           uploadedAttachments.push({
             type: isPDF ? "pdf" : "image",
             name: file.name,
-            id: isPDF ? result.document?.id : result.image?.id,
-            summary: result.summary || result.analysis,
+            id: isPDF ? uploadPayload.document?.id : uploadPayload.image?.id,
+            summary:
+              uploadPayload.summary ||
+              uploadPayload.analysis ||
+              uploadPayload.document?.analysisSummary ||
+              uploadPayload.image?.extractedData,
           });
         }
         queryClient.invalidateQueries({ queryKey: ["/api/documents/list"] });
@@ -211,26 +266,37 @@ export default function ChatPage() {
     setQuery("");
     setAttachments([]);
 
-    if (uploadedAttachments.length > 0 && uploadedAttachments[0].summary && !query.trim()) {
-      const summaryMsg: Message = {
-        id: `summary-${Date.now()}`,
-        type: "assistant",
-        content: uploadedAttachments[0].summary,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, summaryMsg]);
-    } else if (uploadedAttachments.length > 0 && !query.trim()) {
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        type: "assistant",
-        content: `I've uploaded ${uploadedAttachments.length} file(s) successfully. You can now ask questions about these documents or images.`,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+    const uploadOnlyIntent =
+      !query.trim() || /^analyze uploaded files?$/i.test(query.trim());
+
+    if (uploadedAttachments.length > 0 && uploadOnlyIntent) {
+      const withSummary = uploadedAttachments.filter((a) => a.summary);
+      if (withSummary.length > 0) {
+        const uploadTs = Date.now();
+        setMessages((prev) => [
+          ...prev,
+          ...withSummary.map((att, i) => ({
+            id: `summary-${uploadTs}-${i}-${att.name}`,
+            type: "assistant" as const,
+            content: att.summary!,
+            sourceFilename: att.name,
+            timestamp: new Date(),
+          })),
+        ]);
+      } else {
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          type: "assistant",
+          content: `I've uploaded ${uploadedAttachments.length} file(s) successfully. You can now ask questions about these documents or images.`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      }
     }
 
-    if (query.trim()) {
-      searchMutation.mutate(query);
+    const searchQuery = query.trim();
+    if (searchQuery && !/^analyze uploaded files?$/i.test(searchQuery)) {
+      searchMutation.mutate(searchQuery);
     }
   };
 
@@ -276,9 +342,19 @@ export default function ChatPage() {
         api.data?.currentPrice != null &&
         commodityMatches(requestedCrop, api.data?.crop)
     );
+    const foodSecurityData = apiResults.find(
+      (api: any) =>
+        api.data?.ipcPhase != null &&
+        (!requestedCountry ||
+          String(api.data?.country ?? "")
+            .toLowerCase()
+            .includes(String(requestedCountry).toLowerCase()))
+    );
+    const marketCardData = priceData ?? foodSecurityData;
     const hasRealData =
-      priceData &&
-      priceData.data?.currentPrice != null &&
+      marketCardData &&
+      (marketCardData.data?.currentPrice != null ||
+        marketCardData.data?.ipcPhase != null) &&
       (requestedCrop != null || requestedCountry != null) &&
       isMarketIntent;
 
@@ -286,57 +362,81 @@ export default function ChatPage() {
 
     return (
       <div className="mt-4 space-y-3">
-        {hasRealData && (
+        {hasRealData && marketCardData && (
           <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-lg">🌾</span>
-              <span className="font-semibold text-emerald-700 dark:text-emerald-400">Market Data</span>
+              <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                {marketCardData.data?.ipcPhase != null ? "Food Security Data" : "Market Data"}
+              </span>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
-              {priceData.data.crop && (
+              {marketCardData.data.ipcPhase && (
                 <div>
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Commodity</p>
-                  <p className="font-medium text-gray-800 dark:text-gray-200">{priceData.data.crop}</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">IPC Phase</p>
+                  <p className="font-medium text-gray-800 dark:text-gray-200">
+                    {marketCardData.data.ipcPhase}
+                  </p>
                 </div>
               )}
-              {priceData.data.country && (
+              {marketCardData.data.populationInNeed != null && (
+                <div>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">Population in need</p>
+                  <p className="font-medium text-gray-800 dark:text-gray-200">
+                    {Number(marketCardData.data.populationInNeed).toLocaleString()}
+                  </p>
+                </div>
+              )}
+              {marketCardData.data.crop && (
+                <div>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">Commodity</p>
+                  <p className="font-medium text-gray-800 dark:text-gray-200">{marketCardData.data.crop}</p>
+                </div>
+              )}
+              {marketCardData.data.country && (
                 <div>
                   <p className="text-gray-500 dark:text-gray-400 text-xs">Location</p>
                   <p className="font-medium text-gray-800 dark:text-gray-200">
-                    {[priceData.data.market, priceData.data.region, priceData.data.country]
+                    {[marketCardData.data.market, marketCardData.data.region, marketCardData.data.country]
                       .filter(Boolean)
                       .join(", ")}
                   </p>
                 </div>
               )}
-              {priceData.data.currentPrice && (
+              {marketCardData.data.currentPrice && (
                 <div>
                   <p className="text-gray-500 dark:text-gray-400 text-xs">Current Price</p>
                   <p className="font-medium text-emerald-600 dark:text-emerald-400">
-                    {priceData.data.currency || ""} {priceData.data.currentPrice.toLocaleString()}/{priceData.data.unit || "kg"}
+                    {marketCardData.data.currency || ""}{" "}
+                    {marketCardData.data.currentPrice.toLocaleString()}/
+                    {marketCardData.data.unit || "kg"}
                   </p>
                 </div>
               )}
-              {priceData.data.averagePrice && (
+              {marketCardData.data.averagePrice && (
                 <div>
                   <p className="text-gray-500 dark:text-gray-400 text-xs">Average Price</p>
                   <p className="font-medium text-gray-800 dark:text-gray-200">
-                    {priceData.data.currency || ""} {priceData.data.averagePrice.toLocaleString()}/{priceData.data.unit || "kg"}
+                    {marketCardData.data.currency || ""}{" "}
+                    {marketCardData.data.averagePrice.toLocaleString()}/
+                    {marketCardData.data.unit || "kg"}
                   </p>
                 </div>
               )}
-              {priceData.data.lastUpdated && (
+              {(marketCardData.data.lastUpdated || marketCardData.data.referenceDate) && (
                 <div className="col-span-2">
-                  <p className="text-gray-500 dark:text-gray-400 text-xs">Last updated (HDX)</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs">Last updated</p>
                   <p className="font-medium text-gray-800 dark:text-gray-200">
-                    {new Date(priceData.data.lastUpdated).toLocaleDateString()}
+                    {new Date(
+                      marketCardData.data.lastUpdated || marketCardData.data.referenceDate
+                    ).toLocaleDateString()}
                   </p>
                 </div>
               )}
             </div>
           </div>
         )}
-        {pdfResults.length > 0 && (
+        {pdfResults.length > 0 && !(results?.documentAnswers?.length > 0) && (
           <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-1">
               <FileText className="w-4 h-4 text-blue-600" />
@@ -347,7 +447,7 @@ export default function ChatPage() {
             </p>
           </div>
         )}
-        {imageResults.length > 0 && (
+        {imageResults.length > 0 && !(results?.imageAnswers?.length > 0) && (
           <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-1">
               <Image className="w-4 h-4 text-purple-600" />
@@ -461,7 +561,7 @@ export default function ChatPage() {
                       const { body, source } = splitAssistantContent(message.content);
                       return (
                         <>
-                          <FormatChatContent content={body} />
+                          {body ? <FormatChatContent content={body} /> : null}
                           {message.results && formatApiResults(message.results)}
                           <AssistantMessageFooter
                             source={source}

@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
-import type { Document } from "@shared/schema";
+import type { Document, Image } from "@shared/schema";
 import type { ResponseStyle } from "@shared/query-style";
 import { getStyleInstructions } from "@shared/query-style";
 import { GEMINI_MODEL } from "./gemini-config";
@@ -12,6 +12,46 @@ const safetySettings = [
   { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
   { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
 ];
+
+const SOURCE_DOCUMENT_TAG = /^\[SOURCE_DOCUMENT: (.+?)\]\n([\s\S]+)$/;
+const SOURCE_IMAGE_TAG = /^\[SOURCE_IMAGE: (.+?)\]\n([\s\S]+)$/;
+
+export function parseTaggedSource(
+  entry: string,
+  kind: "document" | "image"
+): { filename: string; content: string } | null {
+  const re = kind === "document" ? SOURCE_DOCUMENT_TAG : SOURCE_IMAGE_TAG;
+  const match = entry.match(re);
+  if (match) return { filename: match[1], content: match[2].trim() };
+  return null;
+}
+
+export function ensureSourceLine(text: string, sourceLabel: string): string {
+  const trimmed = text.trim();
+  if (/^Source:\s*.+$/im.test(trimmed)) return trimmed;
+  return `${trimmed}\n\nSource: ${sourceLabel}`;
+}
+
+/** True when a file-source reply has no usable facts for the user's question. */
+export function isInsufficientSourceAnswer(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed === "NO_ANSWER_IN_SOURCE" || trimmed.includes("NO_ANSWER_IN_SOURCE")) {
+    return true;
+  }
+  const body = trimmed.replace(/\n*Source:\s*.+$/i, "").trim().toLowerCase();
+  if (body.length < 20) return true;
+
+  const negative =
+    /does not provide|does not contain|do not provide|cannot be determined|not available in|excerpt does not|file does not|image does not|document does not|no (?:specific )?information|not (?:directly )?answer|only (?:lists?|mentions?|addresses?) the question/i;
+  const bodyOnly = trimmed.replace(/\n*Source:.*$/i, "");
+  const hasSubstantiveBullet = bodyOnly
+    .split("\n")
+    .some((line) => /^-\s+/.test(line.trim()) && line.trim().length > 30);
+
+  if (negative.test(body) && !hasSubstantiveBullet) return true;
+  if (/does not provide/i.test(body) && /addresses|mentions/i.test(body)) return true;
+  return false;
+}
 
 export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   const timeout = new Promise<never>((_, reject) =>
@@ -124,9 +164,12 @@ export async function searchInDocuments(query: string, documents: Document[]): P
   // Process each document separately so each result is clearly tagged with its filename.
   // This prevents source attribution from being lost when results are passed downstream.
   const results: string[] = [];
+  const seenFilenames = new Set<string>();
 
   for (const doc of documents) {
     if (!doc.extractedText || doc.extractedText.trim().length === 0) continue;
+    if (seenFilenames.has(doc.filename)) continue;
+    seenFilenames.add(doc.filename);
 
     const prompt = `You are a document analysis assistant. Read the document below and extract content relevant to the query.
 
@@ -134,13 +177,13 @@ QUERY: ${query}
 
 DOCUMENT FILENAME: ${doc.filename}
 DOCUMENT CONTENT:
-${doc.extractedText.substring(0, 5000)}
+${doc.extractedText.substring(0, 9000)}
 
 TASK:
-- If this document contains relevant information for the query, extract and summarize it precisely.
-- Include specific numbers, ratios, names, dates exactly as they appear.
+- Extract only facts that directly answer the query (3-8 "-" bullets). Copy method names, numbers, and scheme names exactly.
+- Do NOT list unrelated sections or meta descriptions.
 - If this document does NOT contain relevant information for this query, respond with exactly: NO_RELEVANT_CONTENT
-- Do NOT add any prefix like "According to..." — just return the raw extracted content.`;
+- Do NOT add any prefix like "According to..." — return only the extracted content.`;
 
     try {
       const result = await withTimeout(model.generateContent(prompt), 25000, "Document search");
@@ -157,26 +200,72 @@ TASK:
   return results;
 }
 
+export async function searchInImages(query: string, images: Image[]): Promise<string[]> {
+  if (images.length === 0) return [];
+
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL, safetySettings });
+  const results: string[] = [];
+  const seenFilenames = new Set<string>();
+
+  for (const img of images) {
+    if (!img.extractedData || img.extractedData.trim().length === 0) continue;
+    if (seenFilenames.has(img.filename)) continue;
+    seenFilenames.add(img.filename);
+
+    const prompt = `You are an image catalog search assistant. The user uploaded an image; below is a text catalog of what it shows (not the raw image).
+
+QUERY: ${query}
+
+IMAGE FILENAME: ${img.filename}
+IMAGE CATALOG:
+${img.extractedData.substring(0, 4000)}
+
+TASK:
+- Extract only facts that directly answer the query (3-6 "-" bullets). Do not return the question text alone.
+- If the catalog only mentions a topic as a question without factual answers, respond with exactly: NO_RELEVANT_CONTENT
+- If this image does NOT help answer the query, respond with exactly: NO_RELEVANT_CONTENT
+- Do NOT add prefixes like "According to the image..." — return only the extracted points.`;
+
+    try {
+      const result = await withTimeout(model.generateContent(prompt), 25000, "Image search");
+      const text = result.response.text().trim();
+      if (text && text !== "NO_RELEVANT_CONTENT" && !text.includes("NO_RELEVANT_CONTENT")) {
+        results.push(`[SOURCE_IMAGE: ${img.filename}]\n${text}`);
+      }
+    } catch (error: any) {
+      console.error(`Image search error for ${img.filename}:`, error.message);
+    }
+  }
+
+  return results;
+}
+
 export async function analyzePdfDocument(pdfText: string, filename: string): Promise<string> {
   const model = genAI.getGenerativeModel({ model: GEMINI_MODEL, safetySettings });
 
   const prompt = `You are an expert document analyst. A PDF named "${filename}" was uploaded.
-Write a SHORT summary (max 8 bullet points, under 120 words total) covering:
-- What the document is about
-- Key numbers or facts a user can ask questions about
-- Main topics (crops, prices, schemes, etc.)
+List what is INSIDE this document so the user can see its full scope. Use plain "-" bullets only (no bold, no ## headers).
 
-Do not use markdown bold or headers. Use plain "-" bullets only.
+Structure your response as:
+- One opening bullet: what the document is for
+- Section bullets: for each major section/topic in the document, one bullet with the section name and its key facts (include exact numbers, NPK ratios, percentages, dates)
+- Table/data bullets: list each price or commodity row with exact values (crop, location, prices, dates)
+- Closing bullet: sample questions or topics the user can ask about (if listed in the doc)
+
+Target 14-20 bullets and about 200-280 words. Be specific — copy figures and names from the text.
 
 Document Content:
-${pdfText.substring(0, 8000)}`;
+${pdfText.substring(0, 10000)}`;
 
   try {
     const result = await withTimeout(model.generateContent(prompt), 30000, "PDF analysis");
-    return result.response.text();
+    return ensureSourceLine(result.response.text(), filename);
   } catch (error: any) {
     console.error("PDF analysis error:", error.message);
-    return `Document "${filename}" uploaded successfully. Text extraction complete — you can now ask questions about its contents.`;
+    return ensureSourceLine(
+      `Document "${filename}" uploaded successfully. You can now ask questions about its contents.`,
+      filename
+    );
   }
 }
 
@@ -207,7 +296,17 @@ Provide a detailed, accurate answer with specific references to the document whe
   }
 }
 
-export async function analyzeImage(dataUrl: string, query?: string): Promise<string> {
+export type AnalyzeImageOptions = {
+  prompt?: string;
+  filename?: string;
+  /** Short catalog for search indexing (upload). */
+  catalog?: boolean;
+};
+
+export async function analyzeImage(
+  dataUrl: string,
+  options?: string | AnalyzeImageOptions
+): Promise<string> {
   const model = genAI.getGenerativeModel({ model: GEMINI_MODEL, safetySettings });
 
   const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
@@ -217,14 +316,28 @@ export async function analyzeImage(dataUrl: string, query?: string): Promise<str
   const mimeType = matches[1] as "image/jpeg" | "image/png" | "image/webp";
   const base64Data = matches[2];
 
+  const opts: AnalyzeImageOptions =
+    typeof options === "string" ? { prompt: options } : options ?? {};
+  const filename = opts.filename ?? "uploaded image";
+
   const prompt =
-    query ||
-    `Analyze this agricultural image and provide a detailed description including:
-1. What is shown in the image (crops, fields, livestock, equipment, etc.)
-2. Any visible data, measurements, charts, or text
-3. Observations about crop health, growth stage, or conditions
-4. Any relevant agricultural insights or concerns
-5. Geographic or environmental context if visible`;
+    opts.prompt ??
+    (opts.catalog !== false
+      ? `You are an expert analyst. Summarize what is INSIDE this agriculture image/infographic — same style as a PDF section summary. Plain "-" bullets only (no bold, no ## headers).
+
+Do NOT list questions as a numbered 1–10 list. Do NOT mention icons. Instead group content by topic.
+
+Structure:
+- One opening bullet: image title, tagline, and purpose (e.g. infographic for testing agriculture Q&A)
+- Topic bullets: one bullet per major theme shown (e.g. "Food Security in India:", "Commodity Prices:", "Weather Impact:", "Fertilizer & Wheat:", "Government Schemes:", etc.) — each bullet names the theme and summarizes what the image asks or shows about it in one sentence
+- Visuals bullet: summarize all photo panels in 1-2 bullets (fields, equipment, crops, irrigation, drone, produce — not one bullet per photo unless there are only 2-3)
+- Closing bullet: overall topics a user can ask about based on this image
+
+Target 10-14 bullets and about 200-280 words. Match the concise section-summary style used for PDF uploads.`
+      : `Analyze this agricultural image (plain "-" bullets, ~200 words):
+- Title and purpose in one bullet
+- Topic-summary bullets (not a numbered question list)
+- Brief summary of photos shown`);
 
   try {
     const result = await withTimeout(
@@ -235,7 +348,8 @@ export async function analyzeImage(dataUrl: string, query?: string): Promise<str
       30000,
       "Image analysis"
     );
-    return result.response.text();
+    const text = result.response.text();
+    return ensureSourceLine(text, filename);
   } catch (error: any) {
     throw new Error(`Image analysis failed: ${error.message}`);
   }
@@ -255,7 +369,136 @@ QUESTION: ${question}
 
 Provide a detailed, accurate answer based on what is visible in the image.`;
 
-  return analyzeImage(dataUrl, prompt);
+  return analyzeImage(dataUrl, { prompt, filename });
+}
+
+export type GeneralAnswerOptions = {
+  /** User files already answer this — keep GK/API supplement short. */
+  briefBecauseFiles?: boolean;
+};
+
+/** Answer the user query from API data and general knowledge only (not uploaded files). */
+export async function generateGeneralAnswer(
+  query: string,
+  params: ExtractedParams,
+  apiData: any[],
+  priorContext?: string,
+  responseStyle: ResponseStyle = "default",
+  options?: GeneralAnswerOptions
+): Promise<string> {
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL, safetySettings });
+
+  const formattedApi =
+    apiData.length > 0 ? JSON.stringify(apiData, null, 2) : "No live API data returned for this query.";
+
+  const hasLivePrice = apiData.some((d) => d?.currentPrice != null);
+  const hasFoodSecurity = apiData.some(
+    (d) => d?.ipcPhase != null || d?.populationInNeed != null
+  );
+
+  const contextBlock = priorContext?.trim()
+    ? `\nCONVERSATION CONTEXT (reference only):\n${priorContext.trim().slice(0, 400)}\n`
+    : "";
+
+  let sourceLine = "General Knowledge";
+  if (hasLivePrice && hasFoodSecurity) sourceLine = "Live Market API Data; HDX Food Security; General Knowledge";
+  else if (hasLivePrice) sourceLine = "Live Market API Data; General Knowledge";
+  else if (hasFoodSecurity) sourceLine = "HDX Food Security; General Knowledge";
+
+  const prompt = `You are AgriSearch AI, an expert agriculture intelligence assistant.
+${contextBlock}
+USER QUERY: ${query}
+EXTRACTED CONTEXT: ${JSON.stringify(params)}
+
+═══════════════════════════════════════
+LIVE API DATA (use when present; include dates and locations)
+${formattedApi}
+═══════════════════════════════════════
+
+PRIMARY ANSWER RULES:
+${
+  options?.briefBecauseFiles
+    ? `- The user has uploaded document(s)/image(s) that answer this question — those appear in separate messages.
+- Keep this reply SHORT: max 3 "-" bullets (about 60 words) with only live API data or general tips NOT already in their files.
+- If live API has no data for this query, use exactly one sentence pointing to uploaded files, then at most 2 brief general tips.`
+    : `- Answer the USER QUERY directly using live API data when available, then supplement with sound general agriculture knowledge.
+- Uploaded files are handled separately — do NOT say information is unavailable because a user document exists.
+- If API data is empty or does not cover the query, answer from general knowledge without refusing.
+- Do NOT mention "no PDF", "no document", or "no image" in this response.`
+}
+
+${getStyleInstructions(responseStyle)}
+
+RESPONSE FORMAT:
+1. Answer directly; use "-" bullets when listing facts (unless one-word mode).
+2. No markdown bold, no **, no ## headers.
+3. The LAST line MUST be exactly: Source: ${sourceLine}
+
+Answer:`;
+
+  const result = await withTimeout(model.generateContent(prompt), 30000, "General answer");
+  return result.response.text();
+}
+
+/** Format a query-specific answer from one document or image excerpt. */
+export async function generateSourceAnswer(
+  query: string,
+  taggedEntry: string,
+  kind: "document" | "image",
+  responseStyle: ResponseStyle = "default"
+): Promise<string | null> {
+  const parsed = parseTaggedSource(taggedEntry, kind);
+  if (!parsed) return null;
+
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL, safetySettings });
+  const kindLabel = kind === "document" ? "document" : "image";
+
+  const inventoryQuery =
+    /analyze uploaded|what(?:'s| is) in (?:the |this )?(?:file|document|pdf|image)|describe (?:the |this )?(?:file|document|pdf|image)|list (?:the )?contents?/i.test(
+      query
+    );
+
+  const prompt = inventoryQuery
+    ? `You are AgriSearch AI. The user wants an overview of a ${kindLabel}. Use ONLY the excerpt below.
+
+${kind.toUpperCase()} FILENAME: ${parsed.filename}
+EXCERPT:
+${parsed.content}
+
+RULES:
+- Summarize what is inside using 10-14 "-" bullets in PDF-style section summaries (Topic name: key points).
+${kind === "image" ? "- Do NOT list questions as numbered 1–10 or mention icons — group by theme." : "- Include exact numbers, prices, and scheme names when in the excerpt."}
+- About 200-280 words. No markdown bold or ## headers.
+- The LAST line MUST be exactly: Source: ${parsed.filename}
+
+Answer:`
+    : `You are AgriSearch AI. Answer the user's question using ONLY what this ${kindLabel} excerpt says.
+
+USER QUERY: ${query}
+
+${kind.toUpperCase()} FILENAME: ${parsed.filename}
+EXCERPT:
+${parsed.content}
+
+RULES:
+- Give 3-6 "-" bullets with direct answers from the excerpt only (methods, numbers, schemes, recommendations — copy names exactly).
+- Do NOT add "Content in this document/image" or meta bullets like "Central theme:" or "Insights sought:".
+- Do NOT repeat the question or describe what the file is about — only state facts from the file that answer the query.
+- If the excerpt lacks facts to answer the query (e.g. only lists a question title), respond with exactly: NO_ANSWER_IN_SOURCE
+- Max 100 words. No markdown bold or ## headers.
+- If you have a real answer, the LAST line MUST be exactly: Source: ${parsed.filename}
+
+Answer:`;
+
+  try {
+    const result = await withTimeout(model.generateContent(prompt), 25000, `${kindLabel} answer`);
+    const raw = result.response.text().trim();
+    if (isInsufficientSourceAnswer(raw)) return null;
+    return ensureSourceLine(raw, parsed.filename);
+  } catch (error: any) {
+    console.error(`Source answer error (${parsed.filename}):`, error.message);
+    return null;
+  }
 }
 
 export async function generateAgricultureResponse(

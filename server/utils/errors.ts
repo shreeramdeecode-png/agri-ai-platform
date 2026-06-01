@@ -92,13 +92,21 @@ export function fromUnknown(error: unknown): AppError {
     );
   }
 
-  if (/API key|GOOGLE_API_KEY|401|403/i.test(rawMessage) && /gemini|google/i.test(rawMessage)) {
+  if (/leaked/i.test(rawMessage) && /api key|google/i.test(rawMessage)) {
     return new AppError(
       503,
-      "AI service is not configured or rejected the request. Check GOOGLE_API_KEY in .env.",
+      "Your Google API key was disabled because it was exposed publicly. Create a new key in Google AI Studio, update GOOGLE_API_KEY in .env, and restart the server. Never commit or share keys.",
       "AI_SERVICE_ERROR",
       false,
     );
+  }
+
+  if (/API key|GOOGLE_API_KEY|401|403/i.test(rawMessage) && /gemini|google/i.test(rawMessage)) {
+    const hint =
+      !process.env.GOOGLE_API_KEY?.trim()
+        ? "GOOGLE_API_KEY is missing in .env."
+        : "Check GOOGLE_API_KEY in .env (use an AI Studio key starting with AIza, or your current key type if valid).";
+    return new AppError(503, `AI request rejected by Google. ${hint}`, "AI_SERVICE_ERROR", false);
   }
 
   if (/Failed to process|Image analysis|Document Q&A|Response generation/i.test(rawMessage)) {

@@ -20,6 +20,8 @@ export const documents = pgTable("documents", {
   filename: text("filename").notNull(),
   filePath: text("file_path").notNull(),
   extractedText: text("extracted_text"),
+  /** AI-generated upload summary (same role as images.extractedData). */
+  analysisSummary: text("analysis_summary"),
   fileSize: integer("file_size").notNull(),
   uploadDate: timestamp("upload_date").notNull().defaultNow(),
 });

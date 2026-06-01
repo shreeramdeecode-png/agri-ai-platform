@@ -7,14 +7,19 @@ import {
   extractQueryIntent,
   classifyDomain,
   searchInDocuments,
+  searchInImages,
   analyzeImage,
-  generateAgricultureResponse,
+  generateGeneralAnswer,
+  generateSourceAnswer,
+  parseTaggedSource,
+  isInsufficientSourceAnswer,
   analyzePdfDocument,
   askAboutDocument,
   askAboutImage,
   withTimeout,
 } from "./utils/openai-service";
-import { fetchAgricultureData } from "./utils/external-apis";
+import { fetchAgricultureData, fetchFromHDXFoodSecurity, type ExternalApiResult } from "./utils/external-apis";
+import type { SourceAnswerBlock } from "@shared/search-response";
 import { insertUserSchema, insertSearchHistorySchema, insertApiSettingSchema } from "@shared/schema";
 import { stripFollowUpQuery, normalizeAnswerText } from "@shared/market";
 import { parseResponseStyle } from "@shared/query-style";
@@ -139,7 +144,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Search routes
   // Bump this string whenever the response-shaping logic changes so that old
   // cached results are automatically ignored rather than served stale.
-  const CACHE_VERSION = "v13";
+  const CACHE_VERSION = "v18";
+
+  function isUsefulApiResult(r: ExternalApiResult): boolean {
+    const d = r.data;
+    if (!d || d.error) return false;
+    if (d.currentPrice != null) return true;
+    if (d.ipcPhase != null && d.ipcPhase !== "Unknown") return true;
+    if (typeof d.populationInNeed === "number") return true;
+    return false;
+  }
+
+  async function fetchRelevantApiData(
+    extractedParams: Awaited<ReturnType<typeof extractQueryIntent>>,
+    coreQuery: string,
+    useAllSources: boolean
+  ): Promise<ExternalApiResult[]> {
+    const PRICE_KEYWORDS =
+      /\b(prices?|costs?|rates?|market|how much|ksh|usd|inr|per kg|per ton|per tonne|afford|cheap|expensive|value|worth)\b/i;
+
+    const hasLocation = extractedParams.crop != null || extractedParams.country != null;
+    const wantsFoodSecurity =
+      extractedParams.intent === "food_security" && extractedParams.country != null;
+
+    const wantsPrice = useAllSources
+      ? hasLocation
+      : (extractedParams.intent === "price" ||
+          (extractedParams.intent === "food_security" && PRICE_KEYWORDS.test(coreQuery))) &&
+        hasLocation;
+
+    const tasks: Promise<ExternalApiResult[]>[] = [];
+
+    if (wantsPrice) {
+      tasks.push(
+        fetchAgricultureData(extractedParams, { priceOnly: true }).catch(() => [] as ExternalApiResult[])
+      );
+    }
+    if (wantsFoodSecurity) {
+      tasks.push(
+        fetchFromHDXFoodSecurity(extractedParams).then((r) => (r ? [r] : []))
+      );
+    }
+
+    if (tasks.length === 0) return [];
+
+    const batches = await Promise.all(tasks);
+    const merged = batches.flat();
+    const seen = new Set<string>();
+    return merged.filter((r) => {
+      const key = `${r.source}:${r.data?.country ?? ""}:${r.data?.crop ?? ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return isUsefulApiResult(r);
+    });
+  }
 
   app.post("/api/search/query", authMiddleware, async (req, res) => {
     try {
@@ -164,6 +222,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.json({
             ...(typeof cachedResults === "object" ? cachedResults : {}),
             answer: cachedResults.answer,
+            generalAnswer: cachedResults.generalAnswer ?? cachedResults.answer,
+            documentAnswers: cachedResults.documentAnswers,
+            imageAnswers: cachedResults.imageAnswers,
             responseStyle: cachedResults.responseStyle ?? responseStyle,
             sourceType: cached.sourceType,
             extractedParams: cached.extractedParams,
@@ -188,97 +249,117 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
       }
 
-      // Only fetch market data when ALL THREE conditions are true:
-      // 1. Gemini classified intent as price or food_security
-      // 2. A specific crop or country was named
-      // 3. The raw query actually contains a price/market keyword (failsafe against mis-classification)
-      const PRICE_KEYWORDS = /\b(prices?|costs?|rates?|market|how much|ksh|usd|inr|per kg|per ton|per tonne|afford|cheap|expensive|value|worth)\b/i;
       const useAllSources = responseStyle === "brief" || responseStyle === "one-word";
-      const needsMarketData = useAllSources
-        ? extractedParams.crop != null || extractedParams.country != null
-        : (extractedParams.intent === "price" || extractedParams.intent === "food_security") &&
-          (extractedParams.crop != null || extractedParams.country != null) &&
-          PRICE_KEYWORDS.test(coreQuery);
 
-      // Fetch documents/images always; market API only when relevant
       const [userDocuments, userImages] = await Promise.all([
         storage.getUserDocuments(userId),
         storage.getUserImages(userId),
       ]);
 
-      // Run API fetch + PDF search in parallel for speed
-      const STOP_WORDS = new Set(["the","a","an","is","in","of","to","and","or","for","on","with","that","this","are","it","be","from","by","at","which","what","how","do","does","can","help","about","more","some","have","has"]);
-      const queryKeywords = coreQuery
-        .toLowerCase()
-        .split(/\W+/)
-        .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
-
-      const [apiResultsRaw, pdfResults] = await Promise.all([
-        needsMarketData
-          ? withTimeout(fetchAgricultureData(extractedParams, { priceOnly: true }), 50000, "Agriculture API fetch")
-          : Promise.resolve([]),
+      const [apiResults, pdfResults, imageResults] = await Promise.all([
+        withTimeout(fetchRelevantApiData(extractedParams, coreQuery, useAllSources), 50000, "Agriculture API fetch"),
         userDocuments.length > 0
           ? withTimeout(searchInDocuments(coreQuery, userDocuments), 30000, "Document search")
           : Promise.resolve([]),
+        userImages.length > 0
+          ? withTimeout(searchInImages(coreQuery, userImages), 30000, "Image search")
+          : Promise.resolve([]),
       ]);
-
-      const apiResults = apiResultsRaw.filter(
-        (r) => r.data?.currentPrice != null
-      );
-
-      // Filter images by keyword relevance
-      const imageResults: string[] = userImages
-        .filter((img) => {
-          if (!img.extractedData) return false;
-          if (useAllSources || queryKeywords.length === 0) return true;
-          const imgText = img.extractedData.toLowerCase();
-          return queryKeywords.some((kw) => imgText.includes(kw));
-        })
-        .slice(0, useAllSources ? 5 : 3)
-        .map((img) => img.extractedData as string);
 
       console.log(
         `[Search] pdfs=${pdfResults.length} images=${imageResults.length} api=${apiResults.length}`
       );
 
-      // Generate comprehensive AI response (use all available sources together)
-      const answer = await withTimeout(
-        generateAgricultureResponse(
-          query,
-          extractedParams,
-          apiResults.map((r) => r.data),
-          pdfResults,
-          imageResults,
-          typeof priorContext === "string" ? priorContext : undefined,
-          responseStyle
-        ),
-        35000,
-        "Response generation"
+      const prior =
+        typeof priorContext === "string" ? priorContext : undefined;
+
+      const hasApiHits = apiResults.length > 0;
+
+      const docAnswerPromises = pdfResults.map((entry) =>
+        withTimeout(generateSourceAnswer(query, entry, "document", responseStyle), 30000, "Document answer")
+      );
+      const imgAnswerPromises = imageResults.map((entry) =>
+        withTimeout(generateSourceAnswer(query, entry, "image", responseStyle), 30000, "Image answer")
       );
 
-      let finalAnswer = normalizeAnswerText(answer);
-      if (!/Source:/i.test(finalAnswer)) {
-        const sources: string[] = [];
-        if (pdfResults.length > 0) {
-          const name = pdfResults[0].match(/^\[SOURCE_DOCUMENT: (.+?)\]/)?.[1];
-          if (name) sources.push(name);
-        }
-        if (imageResults.length > 0) sources.push("Image Data");
-        if (apiResults.length > 0) sources.push("Live Market API Data");
-        if (sources.length > 0) {
-          finalAnswer = finalAnswer + `\n\nSource: ${sources.join("; ")}`;
-        }
+      const [generalRaw, ...sourceAnswers] = await Promise.all([
+        withTimeout(
+          generateGeneralAnswer(
+            query,
+            extractedParams,
+            apiResults.map((r) => r.data),
+            prior,
+            responseStyle,
+            { briefBecauseFiles: false }
+          ),
+          35000,
+          "General answer"
+        ),
+        ...docAnswerPromises,
+        ...imgAnswerPromises,
+      ]);
+
+      let generalAnswer = normalizeAnswerText(generalRaw);
+      if (generalAnswer && !/Source:/i.test(generalAnswer)) {
+        const apiLabels = apiResults.map((r) => r.source).filter(Boolean);
+        const suffix =
+          apiLabels.length > 0
+            ? `${apiLabels.join("; ")}; General Knowledge`
+            : "General Knowledge";
+        generalAnswer = `${generalAnswer}\n\nSource: ${suffix}`;
       }
 
-      let sourceType = "";
-      if (apiResults.length > 0) sourceType += "API";
-      if (pdfResults.length > 0) sourceType += sourceType ? "+PDF" : "PDF";
-      if (imageResults.length > 0) sourceType += sourceType ? "+Image" : "Image";
-      if (!sourceType) sourceType = "None";
+      const documentAnswers: SourceAnswerBlock[] = [];
+      pdfResults.forEach((entry, i) => {
+        const text = sourceAnswers[i];
+        if (!text || isInsufficientSourceAnswer(text)) return;
+        const parsed = parseTaggedSource(entry, "document");
+        if (parsed) {
+          documentAnswers.push({
+            filename: parsed.filename,
+            content: normalizeAnswerText(text),
+          });
+        }
+      });
+
+      const imageAnswers: SourceAnswerBlock[] = [];
+      const seenImageNames = new Set<string>();
+      imageResults.forEach((entry, i) => {
+        const text = sourceAnswers[pdfResults.length + i];
+        if (!text || isInsufficientSourceAnswer(text)) return;
+        const parsed = parseTaggedSource(entry, "image");
+        if (parsed && !seenImageNames.has(parsed.filename)) {
+          seenImageNames.add(parsed.filename);
+          imageAnswers.push({
+            filename: parsed.filename,
+            content: normalizeAnswerText(text),
+          });
+        }
+      });
+
+      const hasUsefulFileAnswers = documentAnswers.length > 0 || imageAnswers.length > 0;
+      const omitGeneral =
+        hasUsefulFileAnswers &&
+        !hasApiHits &&
+        extractedParams.intent !== "price" &&
+        extractedParams.intent !== "food_security";
+
+      const sourceTypeParts: string[] = [];
+      if (apiResults.length > 0) sourceTypeParts.push("API");
+      if (!omitGeneral) sourceTypeParts.push("GK");
+      if (pdfResults.length > 0) sourceTypeParts.push("PDF");
+      if (imageResults.length > 0) sourceTypeParts.push("Image");
+      const sourceType = sourceTypeParts.join("+");
 
       const responsePayload = {
         cacheVersion: CACHE_VERSION,
-        answer: finalAnswer,
+        generalAnswer,
+        omitGeneral: omitGeneral ? true : undefined,
+        answer: omitGeneral
+          ? documentAnswers[0]?.content || imageAnswers[0]?.content || generalAnswer
+          : generalAnswer,
+        documentAnswers: documentAnswers.length > 0 ? documentAnswers : undefined,
+        imageAnswers: imageAnswers.length > 0 ? imageAnswers : undefined,
         responseStyle,
         apiResults: apiResults.map((r) => ({ source: r.source, data: r.data })),
         pdfResults,
@@ -383,6 +464,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filename: req.file.originalname,
         filePath: req.file.path,
         extractedText,
+        analysisSummary: summary,
         fileSize: req.file.size,
       });
 
@@ -390,6 +472,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Document uploaded and analyzed successfully",
         document,
         summary,
+        analysis: summary,
       });
     } catch (error) {
       logRouteError("Document upload", error);
@@ -473,7 +556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dataUrl = `data:${req.file.mimetype};base64,${base64Image}`;
 
       const extractedData = await withTimeout(
-        analyzeImage(dataUrl),
+        analyzeImage(dataUrl, { filename: req.file.originalname, catalog: true }),
         30000,
         "Image analysis"
       );

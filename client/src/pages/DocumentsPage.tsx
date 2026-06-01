@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { PageShell, DarkPanel } from "@/components/PageShell";
+import { AnalysisPreview } from "@/components/AnalysisPreview";
 import { FormatChatContent } from "@/lib/formatChatContent";
 import {
   FileText,
@@ -193,7 +194,10 @@ export default function DocumentsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents/list"] });
-      toast({ title: "Success", description: "Document uploaded successfully" });
+      toast({
+        title: "Success",
+        description: "Document uploaded and analyzed successfully",
+      });
     },
     onError: (error: unknown) => {
       toast({
@@ -244,45 +248,54 @@ export default function DocumentsPage() {
         ) : documents?.length === 0 ? (
           <p className="text-gray-400 text-sm">No documents uploaded yet.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {documents?.map((doc) => (
               <div
                 key={doc.id}
-                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-[#3a4759] bg-[#1e293b]/60"
+                className="rounded-xl border border-[#3a4759] bg-[#1e293b]/60 overflow-hidden"
                 data-testid={`document-${doc.id}`}
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="h-12 w-12 rounded-lg bg-[#141d2b] border border-[#3a4759] flex items-center justify-center shrink-0">
-                    <FileText className="h-6 w-6 text-emerald-400" />
+                <div className="flex flex-col sm:flex-row gap-4 p-4">
+                  <div className="shrink-0 mx-auto sm:mx-0">
+                    <div className="h-16 w-16 rounded-lg bg-[#141d2b] border border-[#3a4759] flex items-center justify-center">
+                      <FileText className="h-8 w-8 text-emerald-400" />
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="font-medium text-white truncate">{doc.filename}</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {(doc.fileSize / 1024).toFixed(2)} KB ·{" "}
-                      {new Date(doc.uploadDate).toLocaleDateString()}
-                      {doc.extractedText ? " · Ready for search" : ""}
-                    </p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-white truncate">{doc.filename}</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {(doc.fileSize / 1024).toFixed(2)} KB ·{" "}
+                          {new Date(doc.uploadDate).toLocaleDateString()}
+                          {doc.extractedText ? " · Ready for search" : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Button
+                          size="sm"
+                          onClick={() => setQaDoc({ id: doc.id, filename: doc.filename })}
+                          className="bg-[#3a4759] hover:bg-[#4a5769] text-white border-0"
+                          data-testid={`button-ask-${doc.id}`}
+                        >
+                          <MessageCircle className="h-4 w-4 mr-1" />
+                          Ask
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => deleteMutation.mutate(doc.id)}
+                          className="bg-red-500/90 hover:bg-red-600"
+                          data-testid={`button-delete-${doc.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    {doc.analysisSummary && (
+                      <AnalysisPreview text={doc.analysisSummary} title="Document summary" />
+                    )}
                   </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Button
-                    size="sm"
-                    onClick={() => setQaDoc({ id: doc.id, filename: doc.filename })}
-                    className="bg-[#3a4759] hover:bg-[#4a5769] text-white border-0"
-                    data-testid={`button-ask-${doc.id}`}
-                  >
-                    <MessageCircle className="h-4 w-4 mr-1" />
-                    Ask
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => deleteMutation.mutate(doc.id)}
-                    className="bg-red-500/90 hover:bg-red-600"
-                    data-testid={`button-delete-${doc.id}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
                 </div>
               </div>
             ))}

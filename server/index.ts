@@ -74,6 +74,13 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  const geminiKeyLen = process.env.GOOGLE_API_KEY?.trim().length ?? 0;
+  if (geminiKeyLen === 0) {
+    console.warn("[startup] GOOGLE_API_KEY is missing — search and AI uploads will fail.");
+  } else {
+    log(`Gemini configured (key length ${geminiKeyLen}, model ${process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash"})`);
+  }
+
   await seedDatabase();
   const server = await registerRoutes(app);
 
