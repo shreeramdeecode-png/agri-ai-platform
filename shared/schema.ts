@@ -17,6 +17,7 @@ export const users = pgTable("users", {
 export const documents = pgTable("documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  conversationId: text("conversation_id"),
   filename: text("filename").notNull(),
   filePath: text("file_path").notNull(),
   extractedText: text("extracted_text"),
@@ -29,6 +30,7 @@ export const documents = pgTable("documents", {
 export const images = pgTable("images", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  conversationId: text("conversation_id"),
   filename: text("filename").notNull(),
   filePath: text("file_path").notNull(),
   extractedData: text("extracted_data"),
@@ -39,6 +41,7 @@ export const images = pgTable("images", {
 export const searchHistory = pgTable("search_history", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  conversationId: text("conversation_id"),
   query: text("query").notNull(),
   extractedParams: jsonb("extracted_params"),
   sourceType: text("source_type").notNull(),

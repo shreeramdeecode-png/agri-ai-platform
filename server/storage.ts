@@ -40,6 +40,7 @@ export interface IStorage {
   createDocument(doc: InsertDocument): Promise<Document>;
   getDocument(id: string): Promise<Document | undefined>;
   getUserDocuments(userId: string): Promise<Document[]>;
+  getConversationDocuments(userId: string, conversationId: string): Promise<Document[]>;
   getAllDocuments(): Promise<Document[]>;
   deleteDocument(id: string): Promise<void>;
   
@@ -47,6 +48,7 @@ export interface IStorage {
   createImage(img: InsertImage): Promise<Image>;
   getImage(id: string): Promise<Image | undefined>;
   getUserImages(userId: string): Promise<Image[]>;
+  getConversationImages(userId: string, conversationId: string): Promise<Image[]>;
   getAllImages(): Promise<Image[]>;
   deleteImage(id: string): Promise<void>;
   
@@ -55,6 +57,7 @@ export interface IStorage {
   getUserSearchHistory(userId: string): Promise<SearchHistory[]>;
   getAllSearchHistory(): Promise<SearchHistory[]>;
   deleteSearchHistory(id: string): Promise<void>;
+  deleteConversationSearchHistory(userId: string, conversationId: string): Promise<number>;
   deleteAllUserSearchHistory(userId: string): Promise<number>;
   findCachedSearch(userId: string, query: string): Promise<SearchHistory | undefined>;
   
@@ -151,6 +154,15 @@ export class DbStorage implements IStorage {
       .orderBy(desc(schema.documents.uploadDate));
   }
 
+  async getConversationDocuments(userId: string, conversationId: string): Promise<Document[]> {
+    return await db.select().from(schema.documents)
+      .where(and(
+        eq(schema.documents.userId, userId),
+        eq(schema.documents.conversationId, conversationId)
+      ))
+      .orderBy(desc(schema.documents.uploadDate));
+  }
+
   async getAllDocuments(): Promise<Document[]> {
     return await db.select().from(schema.documents).orderBy(desc(schema.documents.uploadDate));
   }
@@ -173,6 +185,15 @@ export class DbStorage implements IStorage {
   async getUserImages(userId: string): Promise<Image[]> {
     return await db.select().from(schema.images)
       .where(eq(schema.images.userId, userId))
+      .orderBy(desc(schema.images.uploadDate));
+  }
+
+  async getConversationImages(userId: string, conversationId: string): Promise<Image[]> {
+    return await db.select().from(schema.images)
+      .where(and(
+        eq(schema.images.userId, userId),
+        eq(schema.images.conversationId, conversationId)
+      ))
       .orderBy(desc(schema.images.uploadDate));
   }
 
@@ -202,6 +223,19 @@ export class DbStorage implements IStorage {
 
   async deleteSearchHistory(id: string): Promise<void> {
     await db.delete(schema.searchHistory).where(eq(schema.searchHistory.id, id));
+  }
+
+  async deleteConversationSearchHistory(userId: string, conversationId: string): Promise<number> {
+    const deleted = await db
+      .delete(schema.searchHistory)
+      .where(
+        and(
+          eq(schema.searchHistory.userId, userId),
+          eq(schema.searchHistory.conversationId, conversationId)
+        )
+      )
+      .returning({ id: schema.searchHistory.id });
+    return deleted.length;
   }
 
   async deleteAllUserSearchHistory(userId: string): Promise<number> {

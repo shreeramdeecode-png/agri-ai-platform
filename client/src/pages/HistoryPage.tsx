@@ -10,8 +10,13 @@ import { cn } from "@/lib/utils";
 import type { SearchHistory } from "@shared/schema";
 
 type HistoryFilter = "all" | "recent";
+type ConversationEntry = {
+  conversationId: string;
+  latest: SearchHistory;
+  entries: SearchHistory[];
+};
 
-function groupSearchesByTime(searches: SearchHistory[], mode: HistoryFilter) {
+function groupSearchesByTime(searches: ConversationEntry[], mode: HistoryFilter) {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today);
@@ -20,14 +25,14 @@ function groupSearchesByTime(searches: SearchHistory[], mode: HistoryFilter) {
   weekStart.setDate(weekStart.getDate() - 7);
 
   const groups = {
-    today: [] as SearchHistory[],
-    yesterday: [] as SearchHistory[],
-    thisWeek: [] as SearchHistory[],
-    older: [] as SearchHistory[],
+    today: [] as ConversationEntry[],
+    yesterday: [] as ConversationEntry[],
+    thisWeek: [] as ConversationEntry[],
+    older: [] as ConversationEntry[],
   };
 
   searches.forEach((search) => {
-    const searchDate = new Date(search.createdAt);
+    const searchDate = new Date(search.latest.createdAt);
     if (searchDate >= today) {
       groups.today.push(search);
     } else if (searchDate >= yesterday) {
@@ -42,12 +47,31 @@ function groupSearchesByTime(searches: SearchHistory[], mode: HistoryFilter) {
   return groups;
 }
 
-function filterByMode(history: SearchHistory[], mode: HistoryFilter): SearchHistory[] {
-  if (mode === "all") return history;
-  const weekStart = new Date();
-  weekStart.setHours(0, 0, 0, 0);
-  weekStart.setDate(weekStart.getDate() - 7);
-  return history.filter((h) => new Date(h.createdAt) >= weekStart);
+function groupByConversation(history: SearchHistory[]): ConversationEntry[] {
+  const byConversation = new Map<string, SearchHistory[]>();
+  for (const item of history) {
+    const key =
+      (typeof item.conversationId === "string" && item.conversationId.trim()) || item.id;
+    const arr = byConversation.get(key);
+    if (arr) arr.push(item);
+    else byConversation.set(key, [item]);
+  }
+
+  const conversations: ConversationEntry[] = [];
+  for (const [conversationId, entries] of byConversation.entries()) {
+    const sorted = [...entries].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+    conversations.push({
+      conversationId,
+      entries: sorted,
+      latest: sorted[sorted.length - 1],
+    });
+  }
+
+  return conversations.sort(
+    (a, b) => new Date(b.latest.createdAt).getTime() - new Date(a.latest.createdAt).getTime()
+  );
 }
 
 export default function HistoryPage() {
@@ -59,8 +83,8 @@ export default function HistoryPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return apiRequest(`/api/search/history/${id}`, { method: "DELETE" });
+    mutationFn: async (conversationId: string) => {
+      return apiRequest(`/api/search/history/conversation/${encodeURIComponent(conversationId)}`, { method: "DELETE" });
     },
     onSuccess: async () => {
       await queryClient.refetchQueries({ queryKey: ["/api/search/history"] });
@@ -98,9 +122,21 @@ export default function HistoryPage() {
     },
   });
 
+  const groupedConversations = useMemo(
+    () => groupByConversation(history || []),
+    [history]
+  );
   const filteredHistory = useMemo(
-    () => filterByMode(history || [], filter),
-    [history, filter]
+    () =>
+      filter === "all"
+        ? groupedConversations
+        : groupedConversations.filter((h) => {
+            const weekStart = new Date();
+            weekStart.setHours(0, 0, 0, 0);
+            weekStart.setDate(weekStart.getDate() - 7);
+            return new Date(h.latest.createdAt) >= weekStart;
+          }),
+    [groupedConversations, filter]
   );
 
   const groups = useMemo(
@@ -116,16 +152,22 @@ export default function HistoryPage() {
 
   if (isLoading) return <div className="p-8 text-white">Loading history...</div>;
 
-  const handleContinueChat = (item: SearchHistory) => {
-    localStorage.setItem("activeConversation", JSON.stringify(item));
+  const handleContinueChat = (item: ConversationEntry) => {
+    localStorage.setItem(
+      "activeConversationThread",
+      JSON.stringify({
+        conversationId: item.conversationId,
+        entries: item.entries,
+      })
+    );
     setLocation("/search");
   };
 
-  const renderSearchItem = (item: SearchHistory) => (
+  const renderSearchItem = (item: ConversationEntry) => (
     <Card
-      key={item.id}
+      key={item.conversationId}
       className="bg-[#2a3749] border-[#3a4759] p-3 md:p-5 hover:border-emerald-500/50 transition-colors cursor-pointer"
-      data-testid={`history-${item.id}`}
+      data-testid={`history-${item.conversationId}`}
       onClick={() => handleContinueChat(item)}
     >
       <div className="flex items-start justify-between gap-2">
@@ -134,18 +176,19 @@ export default function HistoryPage() {
             <MessageSquare className="w-4 h-4 text-emerald-400 flex-shrink-0" />
             <h3
               className="font-semibold text-white text-sm md:text-base truncate"
-              data-testid={`text-query-${item.id}`}
+              data-testid={`text-query-${item.conversationId}`}
             >
-              {item.query}
+              {item.latest.query}
             </h3>
           </div>
           <p className="text-xs md:text-sm text-gray-400 mb-2 md:mb-3 line-clamp-2">
-            {(item.results as { answer?: string })?.answer?.substring(0, 100) || "No answer available"}
+            {((item.latest.results as { answer?: string })?.answer?.substring(0, 100) || "No answer available")}
             …
           </p>
           <div className="flex flex-wrap gap-2 md:gap-4 text-[10px] md:text-xs text-gray-500">
-            <span>{new Date(item.createdAt).toLocaleDateString()}</span>
-            <span className="hidden sm:inline">• {item.sourceType || "API"}</span>
+            <span>{new Date(item.latest.createdAt).toLocaleDateString()}</span>
+            <span className="hidden sm:inline">• {item.latest.sourceType || "API"}</span>
+            <span className="hidden sm:inline">• {item.entries.length} messages</span>
             <span className="text-emerald-400">• Continue</span>
           </div>
         </div>
@@ -153,10 +196,10 @@ export default function HistoryPage() {
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            deleteMutation.mutate(item.id);
+            deleteMutation.mutate(item.conversationId);
           }}
           className="text-gray-400 hover:text-red-400 transition-colors p-1 md:p-2 flex-shrink-0"
-          data-testid={`button-delete-${item.id}`}
+          data-testid={`button-delete-${item.conversationId}`}
         >
           <X className="w-4 h-4 md:w-5 md:h-5" />
         </button>

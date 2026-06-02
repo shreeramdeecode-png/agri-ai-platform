@@ -31,6 +31,10 @@ interface Message {
   failedQuery?: string;
 }
 
+function createConversationId(): string {
+  return `conv-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export default function ChatPage() {
   const { toast } = useToast();
   const [query, setQuery] = useState("");
@@ -38,6 +42,7 @@ export default function ChatPage() {
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [conversationContext, setConversationContext] = useState<string>("");
+  const [conversationId, setConversationId] = useState<string>(createConversationId());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -53,6 +58,7 @@ export default function ChatPage() {
       setQuery("");
       setAttachments([]);
       setConversationContext("");
+      setConversationId(createConversationId());
       initialized.current = true;
     };
     window.addEventListener("newChat", handleNewChat);
@@ -61,6 +67,72 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (initialized.current) return;
+    const activeThread = localStorage.getItem("activeConversationThread");
+    if (activeThread) {
+      try {
+        const threadData = JSON.parse(activeThread) as {
+          conversationId?: string;
+          entries?: SearchHistory[];
+        };
+        const entries = (threadData.entries || []).sort(
+          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+        const loadedMessages: Message[] = [];
+        for (const entry of entries) {
+          loadedMessages.push({
+            id: `user-${entry.id}`,
+            type: "user",
+            content: entry.query,
+            timestamp: new Date(entry.createdAt),
+          });
+          const results = (entry.results || {}) as any;
+          const assistantBody = results.generalAnswer || results.answer || "No response available";
+          loadedMessages.push({
+            id: `assistant-${entry.id}-general`,
+            type: "assistant",
+            content: assistantBody,
+            results,
+            executionTime: entry.executionTime ?? undefined,
+            timestamp: new Date(entry.createdAt),
+          });
+          for (const doc of results.documentAnswers ?? []) {
+            loadedMessages.push({
+              id: `assistant-${entry.id}-doc-${doc.filename}`,
+              type: "assistant",
+              content: doc.content,
+              sourceFilename: doc.filename,
+              timestamp: new Date(entry.createdAt),
+            });
+          }
+          for (const img of results.imageAnswers ?? []) {
+            loadedMessages.push({
+              id: `assistant-${entry.id}-img-${img.filename}`,
+              type: "assistant",
+              content: img.content,
+              sourceFilename: img.filename,
+              timestamp: new Date(entry.createdAt),
+            });
+          }
+        }
+        if (loadedMessages.length > 0) {
+          setMessages(loadedMessages);
+          const lastEntry = entries[entries.length - 1];
+          const lastResults = (lastEntry.results || {}) as any;
+          setConversationContext(
+            `Q: ${lastEntry.query} A: ${(lastResults.generalAnswer || lastResults.answer || "").slice(0, 200)}`
+          );
+        }
+        if (threadData.conversationId) {
+          setConversationId(threadData.conversationId);
+        }
+        localStorage.removeItem("activeConversationThread");
+        initialized.current = true;
+      } catch (e) {
+        console.error("Failed to load conversation", e);
+      }
+      return;
+    }
+
     const activeConversation = localStorage.getItem("activeConversation");
     if (activeConversation) {
       try {
@@ -86,6 +158,9 @@ export default function ChatPage() {
         setConversationContext(
           conversationData.query + " - " + (results?.answer || "").slice(0, 500)
         );
+        if (typeof conversationData.conversationId === "string" && conversationData.conversationId) {
+          setConversationId(conversationData.conversationId);
+        }
         localStorage.removeItem("activeConversation");
         initialized.current = true;
       } catch (e) {
@@ -101,6 +176,7 @@ export default function ChatPage() {
   const uploadFile = async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("conversationId", conversationId);
     const isPDF = file.type === "application/pdf";
     const endpoint = isPDF ? "/api/documents/upload" : "/api/images/upload";
     return authFetchJson(endpoint, { method: "POST", body: formData });
@@ -112,12 +188,16 @@ export default function ChatPage() {
         method: "POST",
         body: JSON.stringify({
           query: searchQuery,
+          conversationId,
           priorContext: conversationContext ? conversationContext.slice(-400) : undefined,
         }),
       });
     },
     onSuccess: (data, searchQuery) => {
       queryClient.invalidateQueries({ queryKey: ["/api/search/history"] });
+      if (typeof data.conversationId === "string" && data.conversationId.trim()) {
+        setConversationId(data.conversationId.trim());
+      }
       const ts = Date.now();
       const newMessages: Message[] = [];
 

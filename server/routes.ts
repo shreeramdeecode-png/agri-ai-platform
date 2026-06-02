@@ -203,6 +203,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = (req as any).user.userId;
       const { priorContext } = req.body;
+      const conversationId =
+        typeof req.body.conversationId === "string" && req.body.conversationId.trim()
+          ? req.body.conversationId.trim()
+          : undefined;
       const query = stripFollowUpQuery(String(req.body.query || ""));
       const { style: responseStyle, coreQuery } = parseResponseStyle(query);
 
@@ -215,7 +219,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check cache first — same query by this user in the last 24 hours.
       // Only use the cached entry if it was saved with the current CACHE_VERSION;
       // older entries (with stale market data, unfiltered images, etc.) are ignored.
-      const cached = await storage.findCachedSearch(userId, query);
+      const cached = conversationId ? undefined : await storage.findCachedSearch(userId, query);
       if (cached && cached.results) {
         const cachedResults = cached.results as any;
         if (cachedResults.cacheVersion === CACHE_VERSION) {
@@ -228,6 +232,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             responseStyle: cachedResults.responseStyle ?? responseStyle,
             sourceType: cached.sourceType,
             extractedParams: cached.extractedParams,
+            conversationId: cached.conversationId,
             executionTime: cached.executionTime,
             cached: true,
             cachedAt: cached.createdAt,
@@ -251,10 +256,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const useAllSources = responseStyle === "brief" || responseStyle === "one-word";
 
-      const [userDocuments, userImages] = await Promise.all([
-        storage.getUserDocuments(userId),
-        storage.getUserImages(userId),
-      ]);
+      const [userDocuments, userImages] = conversationId
+        ? await Promise.all([
+            storage.getConversationDocuments(userId, conversationId),
+            storage.getConversationImages(userId, conversationId),
+          ])
+        : [[], []];
 
       const [apiResults, pdfResults, imageResults] = await Promise.all([
         withTimeout(fetchRelevantApiData(extractedParams, coreQuery, useAllSources), 50000, "Agriculture API fetch"),
@@ -370,6 +377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.createSearchHistory(
         insertSearchHistorySchema.parse({
           userId,
+          conversationId,
           query,
           extractedParams,
           sourceType,
@@ -382,6 +390,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         ...responsePayload,
         sourceType,
+        conversationId,
         extractedParams,
         executionTime: Date.now() - startTime,
         cached: false,
@@ -407,6 +416,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req as any).user.userId;
       const deleted = await storage.deleteAllUserSearchHistory(userId);
       res.json({ message: "All search history cleared", deleted });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.delete("/api/search/history/conversation/:conversationId", authMiddleware, async (req, res) => {
+    try {
+      const userId = (req as any).user.userId;
+      const { conversationId } = req.params;
+      if (!conversationId) {
+        return res.status(400).json({ message: "Conversation id is required" });
+      }
+      const deleted = await storage.deleteConversationSearchHistory(userId, conversationId);
+      if (deleted === 0) {
+        return res.status(404).json({ message: "Conversation history not found" });
+      }
+      res.json({ message: "Conversation history deleted", deleted });
     } catch (error) {
       sendError(res, error);
     }
@@ -444,6 +470,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const userId = (req as any).user.userId;
+      const conversationId =
+        typeof req.body?.conversationId === "string" && req.body.conversationId.trim()
+          ? req.body.conversationId.trim()
+          : null;
       const extractedText = await extractPdfText(req.file.path);
 
       if (!extractedText || extractedText.trim().length < 10) {
@@ -461,6 +491,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const document = await storage.createDocument({
         userId,
+        conversationId,
         filename: req.file.originalname,
         filePath: req.file.path,
         extractedText,
@@ -550,6 +581,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const userId = (req as any).user.userId;
+      const conversationId =
+        typeof req.body?.conversationId === "string" && req.body.conversationId.trim()
+          ? req.body.conversationId.trim()
+          : null;
 
       const imageBuffer = await fs.readFile(req.file.path);
       const base64Image = imageBuffer.toString("base64");
@@ -563,6 +598,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const image = await storage.createImage({
         userId,
+        conversationId,
         filename: req.file.originalname,
         filePath: req.file.path,
         extractedData,
