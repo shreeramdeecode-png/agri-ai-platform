@@ -56,17 +56,17 @@ export default function UserLogin() {
   };
 
   return (
-    <div className="relative flex items-center justify-center min-h-screen w-full overflow-hidden bg-[#0a1628]">
+    <div className="relative flex items-center justify-center min-h-[100dvh] min-h-screen w-full overflow-x-hidden overflow-y-auto bg-[#0a1628] py-8 px-4 sm:px-6">
       {/* Decorative Background Circles */}
-      <div className="absolute w-48 h-48 bg-teal-600/20 rounded-full blur-3xl top-10 left-20"></div>
-      <div className="absolute w-32 h-32 bg-teal-600/15 rounded-full blur-3xl top-32 right-40"></div>
-      <div className="absolute w-64 h-64 bg-teal-600/15 rounded-full blur-3xl bottom-20 right-32"></div>
-      <div className="absolute w-40 h-40 bg-teal-600/20 rounded-full blur-3xl bottom-40 left-20"></div>
+      <div className="pointer-events-none absolute w-48 h-48 bg-teal-600/20 rounded-full blur-3xl top-10 left-20"></div>
+      <div className="pointer-events-none absolute w-32 h-32 bg-teal-600/15 rounded-full blur-3xl top-32 right-40"></div>
+      <div className="pointer-events-none absolute w-64 h-64 bg-teal-600/15 rounded-full blur-3xl bottom-20 right-32"></div>
+      <div className="pointer-events-none absolute w-40 h-40 bg-teal-600/20 rounded-full blur-3xl bottom-40 left-20"></div>
 
-      <div className="relative z-10 flex items-center justify-center gap-16 w-full max-w-7xl px-8">
+      <div className="relative z-10 flex flex-col lg:flex-row items-stretch lg:items-center justify-center gap-6 lg:gap-16 w-full max-w-7xl mx-auto">
         {/* Left Panel - Branding & Features */}
-        <Card className="w-full max-w-md bg-gradient-to-br from-teal-900/40 to-teal-800/30 border-teal-700/50 backdrop-blur-sm">
-          <CardContent className="pt-12 pb-12 px-12">
+        <Card className="w-full max-w-md mx-auto lg:mx-0 bg-gradient-to-br from-teal-900/40 to-teal-800/30 border-teal-700/50 backdrop-blur-sm shrink-0">
+          <CardContent className="pt-8 pb-8 sm:pt-12 sm:pb-12 px-6 sm:px-12">
             <div className="flex flex-col items-center mb-8">
               <div className="relative mb-6">
                 <div className="absolute inset-0 bg-emerald-500/30 rounded-full blur-2xl"></div>
@@ -74,7 +74,7 @@ export default function UserLogin() {
                   <div className="w-10 h-10 bg-white rounded-full"></div>
                 </div>
               </div>
-              <h1 className="text-3xl font-bold text-white mb-2">AgriSearch</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">AgriSearch</h1>
               <p className="text-slate-300 text-base text-center">
                 AI-Powered Agricultural Intelligence
               </p>
@@ -94,16 +94,16 @@ export default function UserLogin() {
         </Card>
 
         {/* Right Panel - Login Form */}
-        <Card className="w-full max-w-md bg-white border-gray-200">
-          <CardHeader className="text-center pb-6">
-            <CardTitle className="text-3xl font-bold text-slate-800">
+        <Card className="w-full max-w-md mx-auto lg:mx-0 bg-white border-gray-200 shrink-0">
+          <CardHeader className="text-center pb-4 sm:pb-6 px-4 sm:px-6 pt-6 sm:pt-8">
+            <CardTitle className="text-2xl sm:text-3xl font-bold text-slate-800">
               Welcome Back
             </CardTitle>
             <CardDescription className="text-base text-slate-500">
               Sign in to your account
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 sm:px-6 pb-6 sm:pb-8">
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-sm text-slate-700">
@@ -146,7 +146,7 @@ export default function UserLogin() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-0 sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="remember"

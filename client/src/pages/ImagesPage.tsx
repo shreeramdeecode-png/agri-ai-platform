@@ -35,6 +35,26 @@ interface ImageQADialogProps {
   onClose: () => void;
 }
 
+function ImageListThumbnail({ filePath, filename }: { filePath: string; filename: string }) {
+  const [loadFailed, setLoadFailed] = useState(false);
+  const src = uploadsPublicUrl(filePath);
+
+  return (
+    <div className="h-16 w-16 rounded-lg bg-[#141d2b] border border-[#3a4759] flex items-center justify-center overflow-hidden shrink-0">
+      {!loadFailed ? (
+        <img
+          src={src}
+          alt={filename}
+          className="h-full w-full object-cover"
+          onError={() => setLoadFailed(true)}
+        />
+      ) : (
+        <ImageIcon className="h-8 w-8 text-emerald-400" aria-hidden />
+      )}
+    </div>
+  );
+}
+
 function ImageQADialog({ img, open, onClose }: ImageQADialogProps) {
   const { toast } = useToast();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -255,55 +275,42 @@ export default function ImagesPage() {
                 className="rounded-xl border border-[#3a4759] bg-[#1e293b]/60 overflow-hidden"
                 data-testid={`image-${img.id}`}
               >
-                <div className="flex flex-col sm:flex-row gap-4 p-4">
-                  <div className="shrink-0 mx-auto sm:mx-0">
-                    <img
-                      src={uploadsPublicUrl(img.filePath)}
-                      alt={img.filename}
-                      className="h-28 w-28 sm:h-32 sm:w-32 object-cover rounded-lg border border-[#3a4759] bg-[#141d2b]"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
-                      }}
-                    />
+                <div className="flex flex-col items-center gap-4 p-4 sm:flex-row sm:items-center">
+                  <ImageListThumbnail filePath={img.filePath} filename={img.filename} />
+                  <div className="flex-1 min-w-0 w-full text-center sm:text-left flex flex-col justify-center">
+                    <p className="font-medium text-white break-all sm:truncate">{img.filename}</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {(img.fileSize / 1024).toFixed(2)} KB ·{" "}
+                      {new Date(img.uploadDate).toLocaleDateString()}
+                      {img.extractedData ? " · Ready for search" : ""}
+                    </p>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                      <div className="flex items-start gap-3 min-w-0">
-                        <ImageIcon className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
-                        <div className="min-w-0">
-                          <p className="font-medium text-white truncate">{img.filename}</p>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {(img.fileSize / 1024).toFixed(2)} KB ·{" "}
-                            {new Date(img.uploadDate).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Button
-                          size="sm"
-                          onClick={() => setQaImg({ id: img.id, filename: img.filename })}
-                          className="bg-[#3a4759] hover:bg-[#4a5769] text-white border-0"
-                          data-testid={`button-ask-${img.id}`}
-                        >
-                          <MessageCircle className="h-4 w-4 mr-1" />
-                          Ask
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => deleteMutation.mutate(img.id)}
-                          className="bg-red-500/90 hover:bg-red-600"
-                          data-testid={`button-delete-${img.id}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                    {img.extractedData && (
-                      <AnalysisPreview text={img.extractedData} title="AI analysis" />
-                    )}
+                  <div className="flex items-center justify-center gap-2 shrink-0 sm:ml-auto">
+                    <Button
+                      size="sm"
+                      onClick={() => setQaImg({ id: img.id, filename: img.filename })}
+                      className="bg-[#3a4759] hover:bg-[#4a5769] text-white border-0"
+                      data-testid={`button-ask-${img.id}`}
+                    >
+                      <MessageCircle className="h-4 w-4 mr-1" />
+                      Ask
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteMutation.mutate(img.id)}
+                      className="bg-red-500/90 hover:bg-red-600"
+                      data-testid={`button-delete-${img.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
+                {img.extractedData && (
+                  <div className="px-4 pb-4 pt-0 border-t border-[#3a4759]/50 sm:border-0 sm:pt-0">
+                    <AnalysisPreview text={img.extractedData} title="AI analysis" />
+                  </div>
+                )}
               </div>
             ))}
           </div>

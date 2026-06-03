@@ -543,7 +543,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] md:h-[calc(100vh-80px)] max-w-4xl mx-auto pb-16 md:pb-0">
+    <div className="flex flex-col flex-1 min-h-0 w-full max-w-4xl mx-auto">
       <div
         ref={chatContainerRef}
         className="flex-1 overflow-y-auto scrollbar-hide px-2 md:px-4 py-4 md:py-6 space-y-4 md:space-y-6"
@@ -675,7 +675,7 @@ export default function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t border-[#3a4759] bg-[#1e293b] p-4">
+      <div className="shrink-0 border-t border-[#3a4759] bg-[#1e293b] p-3 sm:p-4">
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-3">
             {attachments.map((file, idx) => (
@@ -701,7 +701,7 @@ export default function ChatPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="flex items-center gap-3">
+        <form onSubmit={handleSubmit} className="flex items-center gap-2 sm:gap-3">
           <input
             ref={fileInputRef}
             type="file"
@@ -728,7 +728,7 @@ export default function ChatPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Ask about agriculture data, or attach a PDF/image..."
-            className="flex-1 bg-[#2a3749] border-[#3a4759] text-white h-12 placeholder:text-gray-500"
+            className="flex-1 min-w-0 bg-[#2a3749] border-[#3a4759] text-white h-11 sm:h-12 text-sm sm:text-base placeholder:text-gray-500"
             disabled={searchMutation.isPending || isUploading}
             data-testid="input-chat-query"
           />

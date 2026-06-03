@@ -36,6 +36,11 @@ export function formatGeminiModelLabel(modelId: string): string {
 
 export function uploadsPublicUrl(filePath: string): string {
   const normalized = filePath.replace(/\\/g, "/");
+  const uploadsIdx = normalized.toLowerCase().indexOf("/uploads/");
+  if (uploadsIdx >= 0) {
+    const relative = normalized.slice(uploadsIdx + "/uploads/".length);
+    return `/uploads/${relative.split("/").map(encodeURIComponent).join("/")}`;
+  }
   const name = normalized.split("/").pop() || normalized;
   return `/uploads/${encodeURIComponent(name)}`;
 }

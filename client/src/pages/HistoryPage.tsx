@@ -212,33 +212,31 @@ export default function HistoryPage() {
       "px-3 py-1.5 rounded-md text-xs md:text-sm font-medium border transition-colors",
       active
         ? "bg-[#3a4759] text-white border-[#4a5769]"
-        : "bg-transparent text-gray-400 border-transparent hover:bg-[#3a4759]/80 hover:text-gray-100"
+        : "bg-[#1e293b]/40 text-gray-400 border-[#4a5769]/70 hover:bg-[#3a4759]/50 hover:text-gray-200 hover:border-[#5a6779]"
     );
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4 md:space-y-6 pb-20 md:pb-0">
+    <div className="max-w-5xl mx-auto space-y-4 md:space-y-6 w-full min-w-0">
       <Card className="bg-[#2a3749] border-[#3a4759] p-4 md:p-8">
-        <div className="flex flex-col sm:flex-row items-start justify-between mb-4 md:mb-6 gap-3">
-          <div>
+        <div className="mb-4 md:mb-6">
+          <div className="flex items-center justify-between gap-3 mb-1 md:mb-2">
             <h1
-              className="text-2xl md:text-3xl font-bold text-white mb-1 md:mb-2"
+              className="text-2xl md:text-3xl font-bold text-white min-w-0"
               data-testid="heading-history"
             >
               Search History
             </h1>
-            <p className="text-sm md:text-base text-gray-400">Your recent searches and results</p>
-          </div>
-          <Button
-            type="button"
-            className="bg-red-500 hover:bg-red-600 text-white text-sm shrink-0"
-            data-testid="button-clear-all"
-            disabled={!history?.length || clearAllMutation.isPending}
-            onClick={() => {
-              if (window.confirm("Delete all search history? This cannot be undone.")) {
-                clearAllMutation.mutate();
-              }
-            }}
-          >
+            <Button
+              type="button"
+              className="bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm shrink-0 h-8 sm:h-9 px-3"
+              data-testid="button-clear-all"
+              disabled={!history?.length || clearAllMutation.isPending}
+              onClick={() => {
+                if (window.confirm("Delete all search history? This cannot be undone.")) {
+                  clearAllMutation.mutate();
+                }
+              }}
+            >
             {clearAllMutation.isPending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -247,7 +245,9 @@ export default function HistoryPage() {
             ) : (
               "Clear All"
             )}
-          </Button>
+            </Button>
+          </div>
+          <p className="text-sm md:text-base text-gray-400">Your recent searches and results</p>
         </div>
 
         <div className="flex gap-2 md:gap-3 mb-6 md:mb-8" role="tablist" aria-label="History time range">
